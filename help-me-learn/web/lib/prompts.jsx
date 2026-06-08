@@ -15,7 +15,7 @@ function figuresInventory(chapter) {
   const f = (chapter && chapter.figures) || [];
   if (!f.length) return "";
   const list = f.map(x => `- ${x.id} — page ${x.page} du document (${x.w}×${x.h} px)`).join("\n");
-  return `\n\nIMAGES ORIGINALES DISPONIBLES (extraites fidèlement du document source). Le texte du cours contient un marqueur \`[[FIG:fN]]\` à l'endroit exact où chacune apparaît : réinsère la figure d'origine À CET endroit avec un bloc \`\`\`img\\n<id> Légende courte\`\`\`, puis explique-la. Liste des id :\n${list}\nN'emploie un id que là où il est pertinent ; chaque figure du cours doit réapparaître une fois, à sa place.`;
+  return `\n\nIMAGES ORIGINALES DISPONIBLES (extraites fidèlement du document source — tu n'as PAS accès à leur contenu visuel, seulement à leurs id/dimensions/page). Le texte du cours contient un marqueur \`[[FIG:fN]]\` à l'endroit exact où chacune apparaît : réinsère la figure d'origine À CET endroit avec un bloc \`\`\`img\\n<id> Légende courte\`\`\`, puis explique-la STRICTEMENT à partir de ce que dit le contenu source à son sujet (texte qui l'entoure, légende, formules ou libellés qu'elle contient et que tu peux lire dans le texte fourni) : affirme avec assurance ce qui y est explicitement indiqué — ne devine JAMAIS son contenu visuel à voix haute (pas de « la figure montre probablement... »). Si le contenu source ne dit presque rien sur elle, dis-le brièvement et limite-toi à ce qui est sûr (sa légende/sa place dans le raisonnement) plutôt que d'inventer une description. Liste des id :\n${list}\nN'emploie un id que là où il est pertinent ; chaque figure du cours doit réapparaître une fois, à sa place.`;
 }
 
 /* ---- Prompt: opening pass — title, theme, language, glossary ---- */
@@ -52,7 +52,7 @@ function buildPriorContext(chapters, currentId) {
 }
 
 /* ---- Prompt: one lesson section ---- */
-function buildSectionPrompt(chapter, n, prior) {
+function buildSectionPrompt(chapter, n, prior, vision) {
   const langue = getLangue();
   const niveau = getNiveau();
   const s = SECTIONS.find(x => x.n === n);
@@ -66,7 +66,8 @@ function buildSectionPrompt(chapter, n, prior) {
   const niveauExtra = (SECTION_GUIDE_NIVEAU_ADDENDUM[niveau] || {})[n];
   const guide = SECTION_GUIDE[n] + (niveauExtra ? " " + niveauExtra : "");
   const langTail = buildLangTail(langue);
-  return `${sourceBlock(chapter)}${glo}${figuresInventory(chapter)}${prior ? "\n\n" + prior : ""}
+  const figText = vision ? vision.inventoryText : figuresInventory(chapter);
+  return `${sourceBlock(chapter)}${glo}${figText}${prior ? "\n\n" + prior : ""}
 
 Write ONLY section ${n}: "${labels.titre}".
 Section instruction: ${guide}

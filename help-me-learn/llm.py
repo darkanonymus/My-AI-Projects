@@ -65,7 +65,32 @@ def gemini_status() -> dict:
 # ---------------------------------------------------------------------------
 # Engine calls
 # ---------------------------------------------------------------------------
-async def _call_gemini(system: str, prompt: str, model: str | None) -> str:
+
+def _build_content(prompt: str, images: list[dict] | None, fmt: str):
+    """Build a chat message's `content`: a plain string when there are no
+    images (bit-identical to the text-only behavior), or a multimodal array
+    of blocks when images are provided. `fmt` selects the block shape:
+    "anthropic" (Claude Messages API) or "openai" (OpenRouter / Gemini chat
+    completions, OpenAI-compatible)."""
+    if not images:
+        return prompt
+    blocks = []
+    for img in images:
+        data = img.get("data") or ""
+        if not data:
+            continue
+        media_type = img.get("mediaType") or "image/jpeg"
+        if fmt == "anthropic":
+            blocks.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}})
+        else:
+            blocks.append({"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{data}"}})
+    if not blocks:
+        return prompt
+    blocks.append({"type": "text", "text": prompt})
+    return blocks
+
+
+async def _call_gemini(system: str, prompt: str, model: str | None, images: list[dict] | None = None) -> str:
     if not OPENROUTER_API_KEY:
         raise LLMError(
             "Aucune clé OpenRouter configurée. Ajoute OPENROUTER_API_KEY dans le fichier .env "
@@ -83,7 +108,7 @@ async def _call_gemini(system: str, prompt: str, model: str | None) -> str:
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    messages.append({"role": "user", "content": _build_content(prompt, images, "openai")})
 
     payload = {
         "model": model,
@@ -123,7 +148,7 @@ async def _call_gemini(system: str, prompt: str, model: str | None) -> str:
         raise LLMError(f"Erreur lors du parsing de la réponse OpenRouter : {str(e)[:100]}")
 
 
-async def _call_claude(system: str, prompt: str, model: str | None) -> str:
+async def _call_claude(system: str, prompt: str, model: str | None, images: list[dict] | None = None) -> str:
     if not ANTHROPIC_API_KEY:
         raise LLMError(
             "Aucune clé Claude configurée. Ajoute ANTHROPIC_API_KEY dans le fichier .env "
@@ -138,7 +163,7 @@ async def _call_claude(system: str, prompt: str, model: str | None) -> str:
         "model": (model or ANTHROPIC_MODEL).strip(),
         "max_tokens": 4096,
         "system": system,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": _build_content(prompt, images, "anthropic")}],
     }
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
@@ -195,13 +220,13 @@ async def _call_ollama(system: str, prompt: str, model: str | None) -> str:
     return (msg or "").strip()
 
 
-async def complete(system: str, prompt: str, provider: str = "gemini", model: str | None = None) -> str:
+async def complete(system: str, prompt: str, provider: str = "gemini", model: str | None = None, images: list[dict] | None = None) -> str:
     """Single entry point used by the API layer."""
     provider = (provider or "gemini").lower()
     if provider == "claude":
-        return await _call_claude(system, prompt, model)
+        return await _call_claude(system, prompt, model, images)
     if provider == "gemini":
-        return await _call_gemini(system, prompt, model)
+        return await _call_gemini(system, prompt, model, images)
     if provider == "ollama":
         return await _call_ollama(system, prompt, model)
     raise LLMError(f"Moteur inconnu : {provider!r} (attendu « gemini », « claude » ou « ollama »).")
@@ -211,7 +236,7 @@ async def complete(system: str, prompt: str, provider: str = "gemini", model: st
 # Streaming generators (SSE — yields text chunks)
 # ---------------------------------------------------------------------------
 
-async def _stream_openrouter(system: str, prompt: str, model: str | None):
+async def _stream_openrouter(system: str, prompt: str, model: str | None, images: list[dict] | None = None):
     """Yield text chunks from OpenRouter (OpenAI-compatible SSE)."""
     if not OPENROUTER_API_KEY:
         raise LLMError("Aucune clé OpenRouter configurée. Ajoute OPENROUTER_API_KEY dans .env.")
@@ -225,7 +250,7 @@ async def _stream_openrouter(system: str, prompt: str, model: str | None):
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    messages.append({"role": "user", "content": _build_content(prompt, images, "openai")})
     payload = {
         "model": model, "messages": messages,
         "temperature": 0.2, "max_tokens": 65536, "stream": True,
@@ -257,7 +282,7 @@ async def _stream_openrouter(system: str, prompt: str, model: str | None):
         raise LLMError(f"Connexion OpenRouter impossible : {exc}") from exc
 
 
-async def _stream_claude(system: str, prompt: str, model: str | None):
+async def _stream_claude(system: str, prompt: str, model: str | None, images: list[dict] | None = None):
     """Yield text chunks from Anthropic Claude streaming API."""
     if not ANTHROPIC_API_KEY:
         raise LLMError("Aucune clé Claude configurée. Ajoute ANTHROPIC_API_KEY dans .env.")
@@ -270,7 +295,7 @@ async def _stream_claude(system: str, prompt: str, model: str | None):
         "model": (model or ANTHROPIC_MODEL).strip(),
         "max_tokens": 4096,
         "system": system,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": _build_content(prompt, images, "anthropic")}],
         "stream": True,
     }
     try:
@@ -301,14 +326,14 @@ async def _stream_claude(system: str, prompt: str, model: str | None):
         raise LLMError(f"Connexion Claude impossible : {exc}") from exc
 
 
-async def stream(system: str, prompt: str, provider: str = "gemini", model: str | None = None):
+async def stream(system: str, prompt: str, provider: str = "gemini", model: str | None = None, images: list[dict] | None = None):
     """Streaming entry point — async generator yielding text chunks."""
     provider = (provider or "gemini").lower()
     if provider == "gemini":
-        async for chunk in _stream_openrouter(system, prompt, model):
+        async for chunk in _stream_openrouter(system, prompt, model, images):
             yield chunk
     elif provider == "claude":
-        async for chunk in _stream_claude(system, prompt, model):
+        async for chunk in _stream_claude(system, prompt, model, images):
             yield chunk
     else:
         # Ollama: no streaming support — yield full response as single chunk

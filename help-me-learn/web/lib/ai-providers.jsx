@@ -39,7 +39,7 @@ async function serverHealth() {
   return null;
 }
 
-async function callClaude(userPrompt, systemExtra) {
+async function callClaude(userPrompt, systemExtra, images) {
   const langue = getLangue();
   const langLabel = LANG_LABELS[langue] || LANG_LABELS.fr;
   const sys = buildMethode(getNiveau(), langue) + (systemExtra ? "\n\n" + systemExtra : "");
@@ -55,12 +55,15 @@ async function callClaude(userPrompt, systemExtra) {
     ? { pre: `[LANGUAGE: ${langLabel}]\n\n`, suf: "" }
     : { pre: "", suf: "" };
 
+  const body = { system: sys, prompt: langWrap.pre + userPrompt + langWrap.suf, provider, model };
+  if (images && images.length) body.images = images;
+
   let resp;
   try {
     resp = await fetch("/api/llm", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ system: sys, prompt: langWrap.pre + userPrompt + langWrap.suf, provider, model }),
+      body: JSON.stringify(body),
     });
   } catch (e) {
     throw new Error("Le serveur local ne répond pas. Lance « python server.py » puis ouvre http://localhost:8000.");
@@ -74,7 +77,7 @@ async function callClaude(userPrompt, systemExtra) {
   return (data.text || "").trim();
 }
 
-async function callClaudeStream(userPrompt, systemExtra, onChunk) {
+async function callClaudeStream(userPrompt, systemExtra, onChunk, images) {
   const langue = getLangue();
   const sys = buildMethode(getNiveau(), langue) + (systemExtra ? "\n\n" + systemExtra : "");
   const provider = getProvider();
@@ -83,12 +86,15 @@ async function callClaudeStream(userPrompt, systemExtra, onChunk) {
               : getOllamaModel() || null;
   const pre = langue !== "fr" ? `[LANGUAGE: ${LANG_LABELS[langue] || LANG_LABELS.fr}]\n\n` : "";
 
+  const body = { system: sys, prompt: pre + userPrompt, provider, model };
+  if (images && images.length) body.images = images;
+
   let resp;
   try {
     resp = await fetch("/api/llm/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ system: sys, prompt: pre + userPrompt, provider, model }),
+      body: JSON.stringify(body),
     });
   } catch (e) {
     throw new Error("Le serveur local ne répond pas. Lance « python server.py » puis ouvre http://localhost:8000.");

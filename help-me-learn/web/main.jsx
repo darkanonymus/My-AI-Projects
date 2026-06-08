@@ -351,10 +351,13 @@ function App() {
             // Throttle React re-renders to at most every 80ms while streaming
             const flush = () => { timer = null; patchSection(id, sn, { status: "loading", contenu: acc }); };
             const schedule = () => { if (!timer) timer = setTimeout(flush, 80); };
+            const chapterNow = withTermes();
+            const vision = await window.prepareVisionContext(chapterNow, sn);
             await window.callClaudeStream(
-              window.buildSectionPrompt(withTermes(), sn, prior),
+              window.buildSectionPrompt(chapterNow, sn, prior, vision),
               undefined,
-              (chunk) => { acc += chunk; schedule(); }
+              (chunk) => { acc += chunk; schedule(); },
+              vision && vision.images
             );
             if (timer) { clearTimeout(timer); }
             patchSection(id, sn, acc.length > 2 ? { status: "done", contenu: acc } : { status: "error", err: "Réponse vide du moteur." });
@@ -432,7 +435,9 @@ function App() {
     if (!chForRetry) { setGenerating(false); return; }
     patchSection(id, n, { status: "loading" });
     try {
-      const txt = await window.callClaude(window.buildSectionPrompt(chForRetry, n, window.buildPriorContext(chaptersRef.current, id)));
+      const vision = await window.prepareVisionContext(chForRetry, n);
+      const prior = window.buildPriorContext(chaptersRef.current, id);
+      const txt = await window.callClaude(window.buildSectionPrompt(chForRetry, n, prior, vision), undefined, vision && vision.images);
       patchSection(id, n, txt && txt.length > 2 ? { status: "done", contenu: txt } : { status: "error", err: "Réponse vide du moteur." });
     } catch (e) { patchSection(id, n, { status: "error", err: (e && e.message) || String(e) }); }
     setGenerating(false);

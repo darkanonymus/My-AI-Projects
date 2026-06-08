@@ -130,6 +130,7 @@ class LLMRequest(BaseModel):
     prompt: str
     provider: str = "gemini"    # was "ollama" — corrected to current default
     model: str | None = None
+    images: list[dict] | None = None
 
 
 @app.post("/api/llm")
@@ -137,7 +138,7 @@ async def api_llm(req: LLMRequest):
     if req.provider not in _VALID_PROVIDERS:
         raise HTTPException(status_code=422, detail=f"Provider invalide : {req.provider!r}. Valeurs acceptées : {sorted(_VALID_PROVIDERS)}")
     try:
-        text = await llm.complete(req.system, req.prompt, req.provider, req.model)
+        text = await llm.complete(req.system, req.prompt, req.provider, req.model, req.images)
     except llm.LLMError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # noqa: BLE001
@@ -153,7 +154,7 @@ async def api_llm_stream(req: LLMRequest):
 
     async def event_stream():
         try:
-            async for chunk in llm.stream(req.system, req.prompt, req.provider, req.model):
+            async for chunk in llm.stream(req.system, req.prompt, req.provider, req.model, req.images):
                 yield f"data: {json_module.dumps({'c': chunk})}\n\n"
         except llm.LLMError as e:
             yield f"data: {json_module.dumps({'error': str(e)})}\n\n"
