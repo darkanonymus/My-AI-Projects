@@ -1,0 +1,17 @@
+# Secrets — never commit real keys, use .env.example as the template
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Local data — personal generated courses, not project source
+data.db
+
+# Editor/agent local state
+.claude/settings.local.json
+.agents/
+
+# Backup files from refactors (git history is the safety net now)
+*.bak
