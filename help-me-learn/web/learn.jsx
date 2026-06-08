@@ -132,11 +132,76 @@ function Glossary({ termes }) {
   );
 }
 
-/* ---------- One lesson section card ---------- */
-function SectionCard({ section, onRetry }) {
-  const { n, titre, court, status, contenu, err } = section;
+/* ---------- A user-requested Q&A / example / bank-add card, anchored to one course block ---------- */
+function InsertionCard({ insertion, onAddToBank, onDelete }) {
+  const [confirming, setConfirming] = useState(false);
+  const ins = insertion;
+  const linkedToBank = !!ins.addedToCards || !!ins.addedToQuiz;
+  const kindLabel = ins.kind === "ask" ? "💬 Votre question"
+    : ins.kind === "example" ? "💡 Exemple demandé"
+    : "🎴 Ajout au quiz / cartes";
+  const dangerBtn = { color: "var(--bad)", borderColor: "color-mix(in oklch, var(--bad) 40%, transparent)", background: "var(--bad-soft)" };
+  const quote = ins.anchorQuote.length > 200 ? ins.anchorQuote.slice(0, 200) + "…" : ins.anchorQuote;
   return (
-    <section className="card section-card fade-in" data-status={status} style={{ padding: "20px 22px 20px 25px", marginBottom: 14 }} data-screen-label={"Section " + n}>
+    <div className="insertion-card fade-in">
+      <div className="insertion-card-label">{kindLabel}</div>
+      <div className="anchor-quote">« {quote} »</div>
+      {ins.kind === "ask" && ins.question && <p style={{ fontWeight: 600, marginBottom: 6 }}>{ins.question}</p>}
+      {ins.answer && <div className="prose">{window.renderMarkdown(ins.answer)}</div>}
+      {ins.sourceLabel && (
+        <div style={{ marginTop: 8 }}>
+          <Tag variant={ins.sourceLabel === "cours" ? "good" : "ochre"}>
+            {ins.sourceLabel === "cours" ? "📖 D'après le cours" : "Hors cours — explication complémentaire"}
+          </Tag>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {!linkedToBank && (
+          <button className="btn btn-sm" onClick={() => onAddToBank(ins.id, ins.anchorQuote)}>
+            <LIcon name="cards" size={13} /> Ajouter au quiz/cartes
+          </button>
+        )}
+        {linkedToBank && (
+          <Tag variant="good">
+            <LIcon name="check" size={11} /> {ins.addedToCards && ins.addedToQuiz ? "Ajouté au quiz et aux cartes" : ins.addedToCards ? "Ajouté aux cartes" : "Ajouté au quiz"}
+          </Tag>
+        )}
+        <span style={{ flex: 1 }} />
+        {!confirming && (
+          <button className="btn btn-sm btn-ghost" onClick={() => setConfirming(true)} title="Supprimer"><LIcon name="trash" size={13} /></button>
+        )}
+        {confirming && !linkedToBank && (
+          <button className="btn btn-sm" onClick={() => onDelete(ins.id, false)} style={dangerBtn}>{window.ui("btnConfirm")}</button>
+        )}
+        {confirming && linkedToBank && (
+          <span style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <span className="soft" style={{ fontSize: 12.5 }}>Supprimer aussi la carte/question associée ?</span>
+            <button className="btn btn-sm" onClick={() => onDelete(ins.id, false)}>Garder</button>
+            <button className="btn btn-sm" onClick={() => onDelete(ins.id, true)} style={dangerBtn}>Supprimer tout</button>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- One lesson section card ---------- */
+function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion }) {
+  const { n, titre, court, status, contenu, err } = section;
+  const insertions = (chapter.insertions || []).filter(ins => ins.sectionN === n);
+  function injectAfter(blockIdx) {
+    const matches = insertions.filter(ins => ins.afterBlock === blockIdx);
+    if (!matches.length) return null;
+    return (
+      <React.Fragment key={"ins-after-" + blockIdx}>
+        {matches.map(ins => (
+          <InsertionCard key={ins.id} insertion={ins} onAddToBank={onAddToBank} onDelete={onDeleteInsertion} />
+        ))}
+      </React.Fragment>
+    );
+  }
+  return (
+    <section className="card section-card fade-in" data-status={status} data-section-n={n} style={{ padding: "20px 22px 20px 25px", marginBottom: 14 }} data-screen-label={"Section " + n}>
       <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: status === "done" ? 14 : 4 }}>
         <div style={{
           width: 34, height: 34, borderRadius: 9, flex: "none", display: "grid", placeItems: "center",
@@ -164,7 +229,7 @@ function SectionCard({ section, onRetry }) {
           )}
         </div>
       )}
-      {status === "done" && <div className="prose">{window.renderMarkdown(contenu)}</div>}
+      {status === "done" && <div className="prose">{window.renderMarkdown(contenu, injectAfter)}</div>}
     </section>
   );
 }
@@ -195,8 +260,136 @@ function Callout({ variant, icon, title, children }) {
   );
 }
 
+/* ---------- Floating selection menu: ask / example / add-to-bank on a course passage ---------- */
+function SelectionAssistant({ chapter, onAddInsertion, onCheckBank }) {
+  const [sel, setSel] = useState(null);     // { text, sectionN, afterBlock, rect }
+  const [panel, setPanel] = useState(null); // { kind, phase, question?, answer?, sourceLabel?, error? }
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    function handleUp(e) {
+      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
+      const s = window.getSelection();
+      const text = s ? s.toString().trim() : "";
+      if (!text || text.length < 2 || !s.rangeCount) { setSel(null); setPanel(null); return; }
+      const range = s.getRangeAt(0);
+      let node = range.startContainer;
+      if (node.nodeType === 3) node = node.parentElement;
+      const blockEl = node && node.closest ? node.closest("[data-block-index]") : null;
+      const sectionEl = node && node.closest ? node.closest("[data-section-n]") : null;
+      const proseEl = node && node.closest ? node.closest(".prose") : null;
+      if (!blockEl || !sectionEl || !proseEl) { setSel(null); setPanel(null); return; }
+      const rect = range.getBoundingClientRect();
+      if (!rect || (rect.width === 0 && rect.height === 0)) return;
+      setSel({
+        text,
+        sectionN: +sectionEl.getAttribute("data-section-n"),
+        afterBlock: +blockEl.getAttribute("data-block-index"),
+        rect: { top: rect.top, left: rect.left, width: rect.width },
+      });
+      setPanel(null);
+    }
+    document.addEventListener("mouseup", handleUp);
+    return () => document.removeEventListener("mouseup", handleUp);
+  }, []);
+
+  useEffect(() => {
+    function handleScroll() { if (!panel) setSel(null); }
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
+  }, [panel]);
+
+  if (!sel) return null;
+  const section = chapter.sections.find(s => s.n === sel.sectionN);
+  if (!section) return null;
+
+  const top = Math.max(8, sel.rect.top - 46);
+  const left = Math.max(8, Math.min(window.innerWidth - 280, sel.rect.left + sel.rect.width / 2 - 90));
+  const quote = sel.text.length > 140 ? sel.text.slice(0, 140) + "…" : sel.text;
+
+  function close() { setSel(null); setPanel(null); }
+
+  async function runAsk(question) {
+    setPanel({ kind: "ask", phase: "loading", question });
+    try {
+      const data = window.parseJSON(await window.callClaude(window.buildAskPrompt(chapter, section, sel.text, question)));
+      if (!data || !data.reponse || data.reponse.length < 2) { setPanel({ kind: "ask", phase: "error", question, error: "Réponse vide du moteur." }); return; }
+      setPanel({ kind: "ask", phase: "result", question, answer: data.reponse, sourceLabel: data.trouveDansLeCours ? "cours" : "hors-cours" });
+    } catch (e) { setPanel({ kind: "ask", phase: "error", question, error: (e && e.message) || String(e) }); }
+  }
+
+  async function runExample() {
+    setPanel({ kind: "example", phase: "loading" });
+    try {
+      const data = window.parseJSON(await window.callClaude(window.buildExamplePrompt(chapter, section, sel.text)));
+      if (!data || !data.reponse || data.reponse.length < 2) { setPanel({ kind: "example", phase: "error", error: "Réponse vide du moteur." }); return; }
+      setPanel({ kind: "example", phase: "result", answer: data.reponse, sourceLabel: data.trouveDansLeCours ? "cours" : "hors-cours" });
+    } catch (e) { setPanel({ kind: "example", phase: "error", error: (e && e.message) || String(e) }); }
+  }
+
+  async function runBank() {
+    setPanel({ kind: "bank", phase: "loading" });
+    await onCheckBank(sel.text);
+    close();
+  }
+
+  function insert() {
+    onAddInsertion({
+      sectionN: sel.sectionN, afterBlock: sel.afterBlock, anchorQuote: sel.text,
+      kind: panel.kind, question: panel.question || "", answer: panel.answer, sourceLabel: panel.sourceLabel,
+    });
+    close();
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: "fixed", top, left, zIndex: 60 }}>
+      {!panel && (
+        <div className="selection-toolbar">
+          <button className="btn btn-sm" onClick={() => setPanel({ kind: "ask", phase: "input", question: "" })}>💬 Poser une question</button>
+          <button className="btn btn-sm" onClick={runExample}>💡 Exemple plus simple</button>
+          <button className="btn btn-sm" onClick={runBank}>🎴 Ajouter au quiz/cartes</button>
+          <button className="btn btn-sm btn-ghost" onClick={close} title="Fermer"><LIcon name="x" size={13} /></button>
+        </div>
+      )}
+      {panel && panel.kind === "ask" && panel.phase === "input" && (
+        <div className="selection-panel">
+          <div className="soft" style={{ fontSize: 13, marginBottom: 8 }}>« {quote} »</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input autoFocus className="selection-input" placeholder="Ta question sur ce passage…" value={panel.question}
+              onChange={e => setPanel({ ...panel, question: e.target.value })}
+              onKeyDown={e => { if (e.key === "Enter" && panel.question.trim().length > 2) runAsk(panel.question.trim()); }} />
+            <button className="btn btn-sm btn-primary" disabled={panel.question.trim().length < 3} onClick={() => runAsk(panel.question.trim())}>Demander</button>
+          </div>
+        </div>
+      )}
+      {panel && panel.phase === "loading" && (
+        <div className="selection-panel" style={{ display: "flex", alignItems: "center", gap: 9 }}><Spinner size={15} /> Lia réfléchit…</div>
+      )}
+      {panel && panel.phase === "error" && (
+        <div className="selection-panel">
+          <div className="mono" style={{ fontSize: 12.5, color: "var(--bad)", marginBottom: 8 }}>{panel.error}</div>
+          <button className="btn btn-sm" onClick={close}>Fermer</button>
+        </div>
+      )}
+      {panel && panel.phase === "result" && (
+        <div className="selection-panel">
+          <div className="soft" style={{ fontSize: 12.5, marginBottom: 6 }}>« {quote} »</div>
+          <Tag variant={panel.sourceLabel === "cours" ? "good" : "ochre"}>
+            {panel.sourceLabel === "cours" ? "📖 D'après le cours" : "Hors cours — explication complémentaire"}
+          </Tag>
+          <div className="prose" style={{ fontSize: 15, marginTop: 8 }}>{window.renderMarkdown(panel.answer)}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button className="btn btn-sm btn-primary" onClick={insert}><LIcon name="plus" size={13} /> Insérer ici</button>
+            <button className="btn btn-sm btn-ghost" onClick={close}>Ignorer</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Full lesson view for current chapter ---------- */
-function LessonView({ chapter, onRetrySection, onDownload }) {
+function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDeleteInsertion, onCheckBank }) {
   const done = chapter.sections.filter(s => s.status === "done").length;
   const total = chapter.sections.length;
   return (
@@ -233,8 +426,14 @@ function LessonView({ chapter, onRetrySection, onDownload }) {
       <Glossary termes={chapter.termes} />
 
       {chapter.sections.map(s => (
-        <SectionCard key={s.n} section={s} onRetry={() => onRetrySection(chapter.id, s.n)} />
+        <SectionCard key={s.n} section={s} chapter={chapter} onRetry={() => onRetrySection(chapter.id, s.n)}
+          onAddToBank={(insId, passage) => onCheckBank(chapter.id, passage, insId)}
+          onDeleteInsertion={(insId, alsoRemove) => onDeleteInsertion(chapter.id, insId, alsoRemove)} />
       ))}
+
+      <SelectionAssistant chapter={chapter}
+        onAddInsertion={(partial) => onAddInsertion(chapter.id, partial)}
+        onCheckBank={(passage) => onCheckBank(chapter.id, passage, null)} />
 
       {chapter.aVerifier && chapter.aVerifier.length > 0 && (
         <Callout variant="ochre" icon="warn" title={window.ui("calloutVerif")}>
@@ -251,7 +450,7 @@ function LessonView({ chapter, onRetrySection, onDownload }) {
 }
 
 /* ---------- The tab ---------- */
-function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, onSelect, onDownload, home, aiReady, onOpenSettings }) {
+function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, onSelect, onDownload, home, aiReady, onOpenSettings, onAddInsertion, onDeleteInsertion, onCheckBank }) {
   if (!current || home) {
     return (
       <div>
@@ -292,7 +491,7 @@ function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, o
         </div>
       )}
       <Composer onGenerate={onGenerate} generating={generating} compact aiReady={aiReady} onOpenSettings={onOpenSettings} />
-      <LessonView chapter={current} onRetrySection={onRetrySection} onDownload={onDownload} />
+      <LessonView chapter={current} onRetrySection={onRetrySection} onDownload={onDownload} onAddInsertion={onAddInsertion} onDeleteInsertion={onDeleteInsertion} onCheckBank={onCheckBank} />
     </div>
   );
 }

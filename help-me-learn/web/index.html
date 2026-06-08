@@ -247,6 +247,17 @@ button { font-family: inherit; cursor: pointer; }
 .complement-label { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 5px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ochre-deep); }
 .complement p:last-child { margin-bottom: 0; }
 
+.insertion-card { margin: 0.95em 0; padding: 14px 17px; border: 1px solid color-mix(in oklch, var(--good) 35%, transparent); background: var(--good-soft); border-radius: var(--radius-sm); font-size: 15.5px; }
+.insertion-card-label { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 7px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--good); }
+.insertion-card .anchor-quote { font-size: 13px; font-style: italic; color: var(--ink-soft); border-left: 2px solid color-mix(in oklch, var(--good) 45%, transparent); padding-left: 10px; margin-bottom: 9px; }
+.insertion-card p:last-child { margin-bottom: 0; }
+
+.selection-toolbar { display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 8px 28px oklch(0 0 0 / 0.22); }
+.selection-panel { width: 320px; max-width: calc(100vw - 32px); padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 8px 28px oklch(0 0 0 / 0.22); }
+.selection-panel .prose:last-child p:last-child { margin-bottom: 0; }
+.selection-input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; font-family: var(--font-sans); font-size: 14px; background: var(--paper); color: var(--ink); outline: none; }
+.selection-input:focus { border-color: var(--accent-line); }
+
 .figure { margin: 1em 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 10px 12px; overflow: hidden; }
 .figure svg { display: block; width: 100%; height: auto; }
 .figure-fallback { padding: 18px; text-align: center; }
@@ -420,6 +431,7 @@ button { font-family: inherit; cursor: pointer; }
 <script type="text/babel" src="lib/sections.jsx"></script>
 <script type="text/babel" src="lib/ai-providers.jsx"></script>
 <script type="text/babel" src="lib/prompts.jsx"></script>
+<script type="text/babel" src="lib/grounding.jsx"></script>
 <script type="text/babel" src="lib/pdf-extraction.jsx"></script>
 <script type="text/babel" src="lib/render.jsx"></script>
 <script type="text/babel" src="lib/study-plan.jsx"></script>

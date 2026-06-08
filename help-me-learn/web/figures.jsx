@@ -356,12 +356,12 @@ function buildFigureSVG(spec, pal) {
 }
 
 /* React component used inside the lesson prose */
-function FigureBlock({ src }) {
+function FigureBlock({ src, blockIndex }) {
   let spec = null;
   try { spec = JSON.parse(src.trim()); } catch (e) { try { spec = window.parseJSON(src); } catch (_) {} }
   const svg = spec ? buildFigureSVG(spec, APP_FIG_PALETTE) : null;
-  if (!svg) return <div className="figure figure-fallback"><span className="muted mono" style={{ fontSize: 12 }}>schéma non disponible</span></div>;
-  return <div className="figure" dangerouslySetInnerHTML={{ __html: svg }} />;
+  if (!svg) return <div className="figure figure-fallback" data-block-index={blockIndex}><span className="muted mono" style={{ fontSize: 12 }}>schéma non disponible</span></div>;
+  return <div className="figure" data-block-index={blockIndex} dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 /* ---- registry of ORIGINAL course images, keyed by short id (e.g. "f3") ---- */
@@ -379,11 +379,11 @@ function parseImgRef(body) {
 }
 
 /* React component: re-inserts an ORIGINAL figure extracted from the course */
-function ImageBlock({ id, caption }) {
+function ImageBlock({ id, caption, blockIndex }) {
   const src = HML_FIGS[id];
-  if (!src) return <div className="figure figure-fallback"><span className="muted mono" style={{ fontSize: 12 }}>figure du cours indisponible</span></div>;
+  if (!src) return <div className="figure figure-fallback" data-block-index={blockIndex}><span className="muted mono" style={{ fontSize: 12 }}>figure du cours indisponible</span></div>;
   return (
-    <figure className="figure course-fig" style={{ textAlign: "center" }}>
+    <figure className="figure course-fig" data-block-index={blockIndex} style={{ textAlign: "center" }}>
       <img src={src} alt={caption || "Figure du cours"} loading="lazy" style={{ maxWidth: "100%", maxHeight: 460, borderRadius: 7, display: "block", margin: "0 auto" }} />
       <figcaption className="muted" style={{ fontSize: 12, marginTop: 7, display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--accent-deep)" }}>Figure du cours</span>

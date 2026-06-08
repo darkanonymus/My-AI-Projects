@@ -183,6 +183,7 @@ function safeName(s) {
 Object.assign(window, {
   SECTIONS, METHODE_BODY, buildMethode, callClaude,
   buildIntroPrompt, buildSectionPrompt, buildQuizPrompt, buildFlashPrompt, buildClosingPrompt,
+  buildAskPrompt, buildExamplePrompt, buildBankCheckPrompt,
   buildPriorContext, buildExerciseListPrompt, buildSingleExercisePrompt, buildNoExercisePrompt,
   parseJSON, extractFromPDF, extractFromImage,
   renderMarkdown, PLAN_PHASES, buildPlanPhases, buildPlan,

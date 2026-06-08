@@ -52,8 +52,10 @@ async function runConcurrent(tasks, limit) {
 
 const LS_KEY = "hml_state_v2";
 let CH_SEQ = 1;
+let INS_SEQ = 1;
 
 function newId() { return "ch" + (CH_SEQ++); }
+function newInsertionId() { return "ins" + (INS_SEQ++); }
 function freshChapter(source, fromFile, figures) {
   const enabledNums = window.getEnabledSections();
   return {
@@ -67,6 +69,7 @@ function freshChapter(source, fromFile, figures) {
     quiz: null, quizStatus: "idle",
     cards: null, cardsStatus: "idle",
     aVerifier: [], prochaineEtape: "",
+    insertions: [],
     status: "generating", mastered: false, createdAt: Date.now(),
   };
 }
@@ -89,6 +92,10 @@ function loadState() {
     let max = 0;
     d.chapters.forEach(c => { const m = /ch(\d+)/.exec(c.id || ""); if (m) max = Math.max(max, +m[1]); });
     CH_SEQ = max + 1;
+    // restore insertion-id sequence (old chapters may have no `insertions` array yet)
+    let imax = 0;
+    d.chapters.forEach(c => (c.insertions || []).forEach(ins => { const m = /ins(\d+)/.exec(ins.id || ""); if (m) imax = Math.max(imax, +m[1]); }));
+    INS_SEQ = imax + 1;
     // restore figure-id sequence + re-register original course images
     let fmax = 0;
     window.HML_FIGS = window.HML_FIGS || {};
@@ -193,6 +200,9 @@ function App() {
           let max = 0;
           serverChs.forEach(c => { const m = /ch(\d+)/.exec(c.id || ""); if (m) max = Math.max(max, +m[1]); });
           CH_SEQ = max + 1;
+          let imax = 0;
+          serverChs.forEach(c => (c.insertions || []).forEach(ins => { const m = /ins(\d+)/.exec(ins.id || ""); if (m) imax = Math.max(imax, +m[1]); }));
+          INS_SEQ = Math.max(INS_SEQ, imax + 1);
           setChapters(serverChs);
           if (serverState.currentId) setCurrentId(serverState.currentId);
           if (serverState.theme)     setTheme(serverState.theme);
@@ -231,6 +241,54 @@ function App() {
     setChapters(prev => prev.map(c => c.id !== id ? c : { ...c, sections: c.sections.map(s => s.n === n ? { ...s, ...patch } : s) }));
   }
   function flash(msg) { setToast(msg); setTimeout(() => setToast(""), 2600); }
+
+  /* ---- contextual Q&A: chapter.insertions[] (never touches lesson markdown) ---- */
+  function addInsertion(chapterId, partial) {
+    const insertion = { id: newInsertionId(), addedToCards: false, addedToQuiz: false, createdAt: Date.now(), ...partial };
+    patchChapter(chapterId, c => ({ insertions: [...(c.insertions || []), insertion] }));
+  }
+  function deleteInsertion(chapterId, insertionId, alsoRemoveBankItem) {
+    setChapters(prev => prev.map(c => {
+      if (c.id !== chapterId) return c;
+      const ins = (c.insertions || []).find(x => x.id === insertionId);
+      let cards = c.cards, quiz = c.quiz;
+      if (alsoRemoveBankItem && ins) {
+        if (ins.addedToCards && Array.isArray(cards)) cards = cards.filter(card => card.recto !== ins.addedToCards);
+        if (ins.addedToQuiz && Array.isArray(quiz)) quiz = quiz.filter(q => q.q !== ins.addedToQuiz);
+      }
+      return { ...c, cards, quiz, insertions: (c.insertions || []).filter(x => x.id !== insertionId) };
+    }));
+  }
+  async function checkAndAddToBank(chapterId, passage, insertionId) {
+    const ch = chaptersRef.current.find(c => c.id === chapterId); if (!ch) return;
+    try {
+      const data = window.parseJSON(await window.callClaude(window.buildBankCheckPrompt(ch, passage)));
+      if (!data) { flash("Erreur : réponse illisible du moteur."); return; }
+      let cardMsg = "", quizMsg = "", addedCardTitle = false, addedQuizTitle = false;
+      if (data.card) {
+        if (data.card.déjàCouvert) cardMsg = "ℹ️ Déjà couvert par la carte « " + (data.card.doublonDe || "?") + " »";
+        else if (data.card.recto && data.card.verso) {
+          patchChapter(chapterId, c => ({ cards: [...(c.cards || []), { recto: data.card.recto, verso: data.card.verso }] }));
+          cardMsg = "✓ Nouvelle flashcard ajoutée"; addedCardTitle = data.card.recto;
+        }
+      }
+      if (data.quiz) {
+        if (data.quiz.déjàCouvert) quizMsg = "ℹ️ Déjà couvert par la question « " + (data.quiz.doublonDe || "?") + " »";
+        else if (data.quiz.q && Array.isArray(data.quiz.options) && data.quiz.options.length >= 2) {
+          patchChapter(chapterId, c => ({ quiz: [...(c.quiz || []), { q: data.quiz.q, options: data.quiz.options, correct: data.quiz.correct || 0, explication: data.quiz.explication || "" }] }));
+          quizMsg = "✓ Nouvelle question de quiz ajoutée"; addedQuizTitle = data.quiz.q;
+        }
+      }
+      if (insertionId && (addedCardTitle || addedQuizTitle)) {
+        patchChapter(chapterId, c => ({
+          insertions: (c.insertions || []).map(ins => ins.id === insertionId
+            ? { ...ins, addedToCards: addedCardTitle || ins.addedToCards, addedToQuiz: addedQuizTitle || ins.addedToQuiz }
+            : ins),
+        }));
+      }
+      flash([cardMsg, quizMsg].filter(Boolean).join(" · ") || "Rien à ajouter — déjà couvert.");
+    } catch (e) { flash("Échec de la vérification : " + ((e && e.message) || String(e))); }
+  }
 
   /* ---- generation ---- */
   async function generateChapter(source, fromFile, images) {
@@ -453,7 +511,7 @@ function App() {
           </button>
         </div>
         <main className="content-inner">
-          {tab === "learn" && <LearnTab chapters={chapters} current={current} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} />}
+          {tab === "learn" && <LearnTab chapters={chapters} current={current} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} />}
           {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} />}
           {tab === "quiz" && <QuizTab chapters={chapters} current={current} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} />}
           {tab === "cards" && <FlashTab chapters={chapters} current={current} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}
