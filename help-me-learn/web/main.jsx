@@ -53,9 +53,11 @@ async function runConcurrent(tasks, limit) {
 const LS_KEY = "hml_state_v2";
 let CH_SEQ = 1;
 let INS_SEQ = 1;
+let HIDE_SEQ = 1;
 
 function newId() { return "ch" + (CH_SEQ++); }
 function newInsertionId() { return "ins" + (INS_SEQ++); }
+function newHiddenId() { return "hid" + (HIDE_SEQ++); }
 function freshChapter(source, fromFile, figures) {
   const enabledNums = window.getEnabledSections();
   return {
@@ -70,6 +72,7 @@ function freshChapter(source, fromFile, figures) {
     cards: null, cardsStatus: "idle",
     aVerifier: [], prochaineEtape: "",
     insertions: [],
+    hiddenBlocks: [],
     status: "generating", mastered: false, createdAt: Date.now(),
   };
 }
@@ -96,6 +99,10 @@ function loadState() {
     let imax = 0;
     d.chapters.forEach(c => (c.insertions || []).forEach(ins => { const m = /ins(\d+)/.exec(ins.id || ""); if (m) imax = Math.max(imax, +m[1]); }));
     INS_SEQ = imax + 1;
+    // restore hidden-passage-id sequence (old chapters may have no `hiddenBlocks` array yet)
+    let hmax = 0;
+    d.chapters.forEach(c => (c.hiddenBlocks || []).forEach(h => { const m = /hid(\d+)/.exec(h.id || ""); if (m) hmax = Math.max(hmax, +m[1]); }));
+    HIDE_SEQ = hmax + 1;
     // restore figure-id sequence + re-register original course images
     let fmax = 0;
     window.HML_FIGS = window.HML_FIGS || {};
@@ -259,6 +266,15 @@ function App() {
       return { ...c, cards, quiz, insertions: (c.insertions || []).filter(x => x.id !== insertionId) };
     }));
   }
+
+  /* ---- "hide passage": chapter.hiddenBlocks[] (course markdown never touched, mirrors insertions[]) ---- */
+  function addHiddenBlock(chapterId, partial) {
+    const hidden = { id: newHiddenId(), createdAt: Date.now(), ...partial };
+    patchChapter(chapterId, c => ({ hiddenBlocks: [...(c.hiddenBlocks || []), hidden] }));
+  }
+  function restoreHiddenBlock(chapterId, hiddenId) {
+    patchChapter(chapterId, c => ({ hiddenBlocks: (c.hiddenBlocks || []).filter(x => x.id !== hiddenId) }));
+  }
   async function checkAndAddToBank(chapterId, passage, insertionId) {
     const ch = chaptersRef.current.find(c => c.id === chapterId); if (!ch) return;
     try {
@@ -266,17 +282,17 @@ function App() {
       if (!data) { flash("Erreur : réponse illisible du moteur."); return; }
       let cardMsg = "", quizMsg = "", addedCardTitle = false, addedQuizTitle = false;
       if (data.card) {
-        if (data.card.déjàCouvert) cardMsg = "ℹ️ Déjà couvert par la carte « " + (data.card.doublonDe || "?") + " »";
+        if (data.card.déjàCouvert) cardMsg = "Déjà couvert par la carte « " + (data.card.doublonDe || "?") + " »";
         else if (data.card.recto && data.card.verso) {
           patchChapter(chapterId, c => ({ cards: [...(c.cards || []), { recto: data.card.recto, verso: data.card.verso }] }));
-          cardMsg = "✓ Nouvelle flashcard ajoutée"; addedCardTitle = data.card.recto;
+          cardMsg = "Nouvelle flashcard ajoutée"; addedCardTitle = data.card.recto;
         }
       }
       if (data.quiz) {
-        if (data.quiz.déjàCouvert) quizMsg = "ℹ️ Déjà couvert par la question « " + (data.quiz.doublonDe || "?") + " »";
+        if (data.quiz.déjàCouvert) quizMsg = "Déjà couvert par la question « " + (data.quiz.doublonDe || "?") + " »";
         else if (data.quiz.q && Array.isArray(data.quiz.options) && data.quiz.options.length >= 2) {
           patchChapter(chapterId, c => ({ quiz: [...(c.quiz || []), { q: data.quiz.q, options: data.quiz.options, correct: data.quiz.correct || 0, explication: data.quiz.explication || "" }] }));
-          quizMsg = "✓ Nouvelle question de quiz ajoutée"; addedQuizTitle = data.quiz.q;
+          quizMsg = "Nouvelle question de quiz ajoutée"; addedQuizTitle = data.quiz.q;
         }
       }
       if (insertionId && (addedCardTitle || addedQuizTitle)) {
@@ -511,7 +527,7 @@ function App() {
           </button>
         </div>
         <main className="content-inner">
-          {tab === "learn" && <LearnTab chapters={chapters} current={current} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} />}
+          {tab === "learn" && <LearnTab chapters={chapters} current={current} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} />}
           {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} />}
           {tab === "quiz" && <QuizTab chapters={chapters} current={current} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} />}
           {tab === "cards" && <FlashTab chapters={chapters} current={current} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}

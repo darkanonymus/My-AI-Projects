@@ -137,9 +137,9 @@ function InsertionCard({ insertion, onAddToBank, onDelete }) {
   const [confirming, setConfirming] = useState(false);
   const ins = insertion;
   const linkedToBank = !!ins.addedToCards || !!ins.addedToQuiz;
-  const kindLabel = ins.kind === "ask" ? "💬 Votre question"
-    : ins.kind === "example" ? "💡 Exemple demandé"
-    : "🎴 Ajout au quiz / cartes";
+  const kindLabel = ins.kind === "ask" ? <><LIcon name="message" size={12} /> Votre question</>
+    : ins.kind === "example" ? <><LIcon name="idea" size={12} /> Exemple demandé</>
+    : <><LIcon name="cards" size={12} /> Ajout au quiz / cartes</>;
   const dangerBtn = { color: "var(--bad)", borderColor: "color-mix(in oklch, var(--bad) 40%, transparent)", background: "var(--bad-soft)" };
   const quote = ins.anchorQuote.length > 200 ? ins.anchorQuote.slice(0, 200) + "…" : ins.anchorQuote;
   return (
@@ -151,7 +151,7 @@ function InsertionCard({ insertion, onAddToBank, onDelete }) {
       {ins.sourceLabel && (
         <div style={{ marginTop: 8 }}>
           <Tag variant={ins.sourceLabel === "cours" ? "good" : "ochre"}>
-            {ins.sourceLabel === "cours" ? "📖 D'après le cours" : "Hors cours — explication complémentaire"}
+            {ins.sourceLabel === "cours" ? <><LIcon name="book" size={11} /> D'après le cours</> : "Hors cours — explication complémentaire"}
           </Tag>
         </div>
       )}
@@ -185,10 +185,36 @@ function InsertionCard({ insertion, onAddToBank, onDelete }) {
   );
 }
 
+/* ---------- Collapsed placeholder for a hidden passage (chapter.hiddenBlocks[]) ---------- */
+function CollapsedPassage({ hidden, onRestore, children }) {
+  const [revealed, setRevealed] = useState(false);
+  const count = hidden.toBlock - hidden.fromBlock + 1;
+  const label = count <= 1 ? "1 passage masqué" : count + " passages masqués";
+  return (
+    <div className="hidden-passage fade-in" data-block-index={hidden.fromBlock}>
+      <div className="hidden-passage-bar">
+        <span className="soft" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+          <LIcon name="hide" size={15} /> {label}
+        </span>
+        <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn btn-sm btn-ghost" onClick={() => setRevealed(r => !r)}>
+            <LIcon name={revealed ? "hide" : "eye"} size={13} /> {revealed ? "Masquer à nouveau" : "Afficher"}
+          </button>
+          <button className="btn btn-sm btn-ghost" onClick={() => onRestore(hidden.id)}>
+            <LIcon name="flip" size={13} /> Restaurer
+          </button>
+        </span>
+      </div>
+      {revealed && <div className="hidden-passage-content">{children}</div>}
+    </div>
+  );
+}
+
 /* ---------- One lesson section card ---------- */
-function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion }) {
+function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion, onRestoreHiddenBlock }) {
   const { n, titre, court, status, contenu, err } = section;
   const insertions = (chapter.insertions || []).filter(ins => ins.sectionN === n);
+  const hiddenRanges = (chapter.hiddenBlocks || []).filter(h => h.sectionN === n);
   function injectAfter(blockIdx) {
     const matches = insertions.filter(ins => ins.afterBlock === blockIdx);
     if (!matches.length) return null;
@@ -229,7 +255,7 @@ function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion
           )}
         </div>
       )}
-      {status === "done" && <div className="prose">{window.renderMarkdown(contenu, injectAfter)}</div>}
+      {status === "done" && <div className="prose">{window.renderMarkdown(contenu, injectAfter, hiddenRanges, onRestoreHiddenBlock)}</div>}
     </section>
   );
 }
@@ -261,30 +287,41 @@ function Callout({ variant, icon, title, children }) {
 }
 
 /* ---------- Floating selection menu: ask / example / add-to-bank on a course passage ---------- */
-function SelectionAssistant({ chapter, onAddInsertion, onCheckBank }) {
-  const [sel, setSel] = useState(null);     // { text, sectionN, afterBlock, rect }
+function SelectionAssistant({ chapter, onAddInsertion, onAddHiddenBlock, onCheckBank }) {
+  const [sel, setSel] = useState(null);     // { text, sectionN, afterBlock, fromBlock, toBlock, rect }
   const [panel, setPanel] = useState(null); // { kind, phase, question?, answer?, sourceLabel?, error? }
   const wrapRef = useRef(null);
+  const rangeRef = useRef(null); // live Range clone — lets the panel track the passage as the page scrolls
+
+  function dismiss() { setSel(null); setPanel(null); rangeRef.current = null; }
 
   useEffect(() => {
     function handleUp(e) {
       if (wrapRef.current && wrapRef.current.contains(e.target)) return;
       const s = window.getSelection();
       const text = s ? s.toString().trim() : "";
-      if (!text || text.length < 2 || !s.rangeCount) { setSel(null); setPanel(null); return; }
+      if (!text || text.length < 2 || !s.rangeCount) { dismiss(); return; }
       const range = s.getRangeAt(0);
       let node = range.startContainer;
       if (node.nodeType === 3) node = node.parentElement;
+      let endNode = range.endContainer;
+      if (endNode.nodeType === 3) endNode = endNode.parentElement;
       const blockEl = node && node.closest ? node.closest("[data-block-index]") : null;
+      const endBlockEl = endNode && endNode.closest ? endNode.closest("[data-block-index]") : null;
       const sectionEl = node && node.closest ? node.closest("[data-section-n]") : null;
       const proseEl = node && node.closest ? node.closest(".prose") : null;
-      if (!blockEl || !sectionEl || !proseEl) { setSel(null); setPanel(null); return; }
+      if (!blockEl || !endBlockEl || !sectionEl || !proseEl) { dismiss(); return; }
       const rect = range.getBoundingClientRect();
       if (!rect || (rect.width === 0 && rect.height === 0)) return;
+      const a = +blockEl.getAttribute("data-block-index");
+      const b = +endBlockEl.getAttribute("data-block-index");
+      rangeRef.current = range.cloneRange();
       setSel({
         text,
         sectionN: +sectionEl.getAttribute("data-section-n"),
-        afterBlock: +blockEl.getAttribute("data-block-index"),
+        afterBlock: Math.min(a, b),
+        fromBlock: Math.min(a, b),
+        toBlock: Math.max(a, b),
         rect: { top: rect.top, left: rect.left, width: rect.width },
       });
       setPanel(null);
@@ -293,11 +330,29 @@ function SelectionAssistant({ chapter, onAddInsertion, onCheckBank }) {
     return () => document.removeEventListener("mouseup", handleUp);
   }, []);
 
+  // Re-anchor the floating panel to the selected passage as the page scrolls
+  // (instead of leaving it floating in place over newly-revealed content),
+  // and dismiss it once that passage scrolls out of view entirely.
   useEffect(() => {
-    function handleScroll() { if (!panel) setSel(null); }
-    window.addEventListener("scroll", handleScroll, true);
-    return () => window.removeEventListener("scroll", handleScroll, true);
-  }, [panel]);
+    let raf = null;
+    function track() {
+      raf = null;
+      const range = rangeRef.current;
+      if (!range) return;
+      const rect = range.getBoundingClientRect();
+      const offscreen = !rect || (rect.width === 0 && rect.height === 0) || rect.bottom < 0 || rect.top > window.innerHeight;
+      if (offscreen) { dismiss(); return; }
+      setSel(prev => prev ? { ...prev, rect: { top: rect.top, left: rect.left, width: rect.width } } : prev);
+    }
+    function onScrollOrResize() { if (raf == null) raf = requestAnimationFrame(track); }
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      if (raf != null) cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, []);
 
   if (!sel) return null;
   const section = chapter.sections.find(s => s.n === sel.sectionN);
@@ -306,8 +361,9 @@ function SelectionAssistant({ chapter, onAddInsertion, onCheckBank }) {
   const top = Math.max(8, sel.rect.top - 46);
   const left = Math.max(8, Math.min(window.innerWidth - 280, sel.rect.left + sel.rect.width / 2 - 90));
   const quote = sel.text.length > 140 ? sel.text.slice(0, 140) + "…" : sel.text;
-
-  function close() { setSel(null); setPanel(null); }
+  const close = dismiss;
+  const dangerBtn = { color: "var(--bad)", borderColor: "color-mix(in oklch, var(--bad) 40%, transparent)", background: "var(--bad-soft)" };
+  const passageCount = sel.toBlock - sel.fromBlock + 1;
 
   async function runAsk(question) {
     setPanel({ kind: "ask", phase: "loading", question });
@@ -333,6 +389,12 @@ function SelectionAssistant({ chapter, onAddInsertion, onCheckBank }) {
     close();
   }
 
+  function askHide() { setPanel({ kind: "hide", phase: "confirm" }); }
+  function confirmHide() {
+    onAddHiddenBlock({ sectionN: sel.sectionN, fromBlock: sel.fromBlock, toBlock: sel.toBlock });
+    close();
+  }
+
   function insert() {
     onAddInsertion({
       sectionN: sel.sectionN, afterBlock: sel.afterBlock, anchorQuote: sel.text,
@@ -345,10 +407,23 @@ function SelectionAssistant({ chapter, onAddInsertion, onCheckBank }) {
     <div ref={wrapRef} style={{ position: "fixed", top, left, zIndex: 60 }}>
       {!panel && (
         <div className="selection-toolbar">
-          <button className="btn btn-sm" onClick={() => setPanel({ kind: "ask", phase: "input", question: "" })}>💬 Poser une question</button>
-          <button className="btn btn-sm" onClick={runExample}>💡 Exemple plus simple</button>
-          <button className="btn btn-sm" onClick={runBank}>🎴 Ajouter au quiz/cartes</button>
+          <button className="btn btn-sm" onClick={() => setPanel({ kind: "ask", phase: "input", question: "" })}><LIcon name="message" size={13} /> Poser une question</button>
+          <button className="btn btn-sm" onClick={runExample}><LIcon name="idea" size={13} /> Exemple plus simple</button>
+          <button className="btn btn-sm" onClick={runBank}><LIcon name="cards" size={13} /> Ajouter au quiz/cartes</button>
+          <button className="btn btn-sm" onClick={askHide}><LIcon name="hide" size={13} /> Masquer ce passage</button>
           <button className="btn btn-sm btn-ghost" onClick={close} title="Fermer"><LIcon name="x" size={13} /></button>
+        </div>
+      )}
+      {panel && panel.kind === "hide" && panel.phase === "confirm" && (
+        <div className="selection-panel">
+          <div style={{ fontSize: 14.5, marginBottom: 12 }}>
+            Masquer {passageCount === 1 ? "ce paragraphe" : "ces " + passageCount + " paragraphes"} du cours ?
+            <div className="soft" style={{ fontSize: 12.5, marginTop: 4 }}>Le texte original est conservé — vous pourrez l'afficher ou le restaurer à tout moment.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-sm" style={dangerBtn} onClick={confirmHide}><LIcon name="hide" size={13} /> {window.ui("btnConfirm")}</button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setPanel(null)}>Annuler</button>
+          </div>
         </div>
       )}
       {panel && panel.kind === "ask" && panel.phase === "input" && (
@@ -373,12 +448,14 @@ function SelectionAssistant({ chapter, onAddInsertion, onCheckBank }) {
       )}
       {panel && panel.phase === "result" && (
         <div className="selection-panel">
-          <div className="soft" style={{ fontSize: 12.5, marginBottom: 6 }}>« {quote} »</div>
-          <Tag variant={panel.sourceLabel === "cours" ? "good" : "ochre"}>
-            {panel.sourceLabel === "cours" ? "📖 D'après le cours" : "Hors cours — explication complémentaire"}
-          </Tag>
-          <div className="prose" style={{ fontSize: 15, marginTop: 8 }}>{window.renderMarkdown(panel.answer)}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <div className="selection-panel-scroll">
+            <div className="soft" style={{ fontSize: 12.5, marginBottom: 6 }}>« {quote} »</div>
+            <Tag variant={panel.sourceLabel === "cours" ? "good" : "ochre"}>
+              {panel.sourceLabel === "cours" ? <><LIcon name="book" size={11} /> D'après le cours</> : "Hors cours — explication complémentaire"}
+            </Tag>
+            <div className="prose" style={{ fontSize: 15, marginTop: 8 }}>{window.renderMarkdown(panel.answer)}</div>
+          </div>
+          <div className="selection-panel-actions">
             <button className="btn btn-sm btn-primary" onClick={insert}><LIcon name="plus" size={13} /> Insérer ici</button>
             <button className="btn btn-sm btn-ghost" onClick={close}>Ignorer</button>
           </div>
@@ -389,7 +466,7 @@ function SelectionAssistant({ chapter, onAddInsertion, onCheckBank }) {
 }
 
 /* ---------- Full lesson view for current chapter ---------- */
-function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDeleteInsertion, onCheckBank }) {
+function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock }) {
   const done = chapter.sections.filter(s => s.status === "done").length;
   const total = chapter.sections.length;
   return (
@@ -428,10 +505,12 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
       {chapter.sections.map(s => (
         <SectionCard key={s.n} section={s} chapter={chapter} onRetry={() => onRetrySection(chapter.id, s.n)}
           onAddToBank={(insId, passage) => onCheckBank(chapter.id, passage, insId)}
-          onDeleteInsertion={(insId, alsoRemove) => onDeleteInsertion(chapter.id, insId, alsoRemove)} />
+          onDeleteInsertion={(insId, alsoRemove) => onDeleteInsertion(chapter.id, insId, alsoRemove)}
+          onRestoreHiddenBlock={(hideId) => onRestoreHiddenBlock(chapter.id, hideId)} />
       ))}
 
       <SelectionAssistant chapter={chapter}
+        onAddHiddenBlock={(partial) => onAddHiddenBlock(chapter.id, partial)}
         onAddInsertion={(partial) => onAddInsertion(chapter.id, partial)}
         onCheckBank={(passage) => onCheckBank(chapter.id, passage, null)} />
 
@@ -450,7 +529,7 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
 }
 
 /* ---------- The tab ---------- */
-function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, onSelect, onDownload, home, aiReady, onOpenSettings, onAddInsertion, onDeleteInsertion, onCheckBank }) {
+function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, onSelect, onDownload, home, aiReady, onOpenSettings, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock }) {
   if (!current || home) {
     return (
       <div>
@@ -491,9 +570,9 @@ function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, o
         </div>
       )}
       <Composer onGenerate={onGenerate} generating={generating} compact aiReady={aiReady} onOpenSettings={onOpenSettings} />
-      <LessonView chapter={current} onRetrySection={onRetrySection} onDownload={onDownload} onAddInsertion={onAddInsertion} onDeleteInsertion={onDeleteInsertion} onCheckBank={onCheckBank} />
+      <LessonView chapter={current} onRetrySection={onRetrySection} onDownload={onDownload} onAddInsertion={onAddInsertion} onDeleteInsertion={onDeleteInsertion} onCheckBank={onCheckBank} onAddHiddenBlock={onAddHiddenBlock} onRestoreHiddenBlock={onRestoreHiddenBlock} />
     </div>
   );
 }
 
-Object.assign(window, { Composer, LearnTab, Callout });
+Object.assign(window, { Composer, LearnTab, Callout, CollapsedPassage });

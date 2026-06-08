@@ -44,7 +44,7 @@ function renderInline(text, keyBase) {
 }
 
 /* block parser */
-function renderMarkdown(src, injectAfter) {
+function renderMarkdown(src, injectAfter, hiddenRanges, onRestoreHidden) {
   if (!src) return null;
   // normalize, then handle complements as blocks
   const blocks = [];
@@ -57,7 +57,7 @@ function renderMarkdown(src, injectAfter) {
     if (part.startsWith("[[C]]")) {
       const inner = part.replace(/^\[\[C\]\]/, "").replace(/\[\[\/C\]\]$/, "").trim();
       const myKey = bkey++;
-      const innerBlocks = renderBlocks(inner, "cmp" + bkey, blockIndex, injectAfter);
+      const innerBlocks = renderBlocks(inner, "cmp" + bkey, blockIndex, injectAfter, hiddenRanges, onRestoreHidden);
       blockIndex += innerBlocks.length;
       blocks.push(
         <div className="complement" key={"cmp" + myKey}>
@@ -67,7 +67,7 @@ function renderMarkdown(src, injectAfter) {
       );
     } else {
       const myKey = bkey++;
-      const segBlocks = renderBlocks(part, "b" + bkey, blockIndex, injectAfter);
+      const segBlocks = renderBlocks(part, "b" + bkey, blockIndex, injectAfter, hiddenRanges, onRestoreHidden);
       blockIndex += segBlocks.length;
       blocks.push(<React.Fragment key={"b" + myKey}>{segBlocks}</React.Fragment>);
     }
@@ -76,14 +76,31 @@ function renderMarkdown(src, injectAfter) {
 }
 
 /* injectAfter(blockIndex) — optional; called once per rendered block with its
-   global index, may return an extra React node to splice right after it */
-function renderBlocks(text, kb, startIndex, injectAfter) {
+   global index, may return an extra React node to splice right after it.
+   hiddenRanges — optional array of { id, fromBlock, toBlock }; blocks whose
+   index falls inside a range are collected and wrapped in a single
+   <window.CollapsedPassage> placeholder instead of being rendered inline. */
+function renderBlocks(text, kb, startIndex, injectAfter, hiddenRanges, onRestoreHidden) {
   const out = [];
   const lines = text.replace(/\r/g, "").split("\n");
   let i = 0, k = startIndex || 0;
+  let collecting = null; // { range, nodes }
   function place(node) {
+    const extra = injectAfter ? injectAfter(k) : null;
+    const range = hiddenRanges && hiddenRanges.find(h => k >= h.fromBlock && k <= h.toBlock);
+    if (range) {
+      if (!collecting || collecting.range.id !== range.id) collecting = { range, nodes: [] };
+      collecting.nodes.push(node);
+      if (extra) collecting.nodes.push(extra);
+      if (k === range.toBlock) {
+        out.push(<window.CollapsedPassage key={kb + "hide" + range.id} hidden={range} onRestore={onRestoreHidden}>{collecting.nodes}</window.CollapsedPassage>);
+        collecting = null;
+      }
+      k++;
+      return;
+    }
     out.push(node);
-    if (injectAfter) { const extra = injectAfter(k); if (extra) out.push(extra); }
+    if (extra) out.push(extra);
     k++;
   }
   while (i < lines.length) {

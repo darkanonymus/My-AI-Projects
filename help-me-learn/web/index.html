@@ -252,8 +252,15 @@ button { font-family: inherit; cursor: pointer; }
 .insertion-card .anchor-quote { font-size: 13px; font-style: italic; color: var(--ink-soft); border-left: 2px solid color-mix(in oklch, var(--good) 45%, transparent); padding-left: 10px; margin-bottom: 9px; }
 .insertion-card p:last-child { margin-bottom: 0; }
 
+.hidden-passage { margin: 0.95em 0; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-2); overflow: hidden; }
+.hidden-passage-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 11px 16px; }
+.hidden-passage-content { padding: 2px 16px 14px; border-top: 1px solid var(--line); }
+.hidden-passage-content p:last-child { margin-bottom: 0; }
+
 .selection-toolbar { display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 8px 28px oklch(0 0 0 / 0.22); }
-.selection-panel { width: 320px; max-width: calc(100vw - 32px); padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 8px 28px oklch(0 0 0 / 0.22); }
+.selection-panel { width: 320px; max-width: calc(100vw - 32px); max-height: min(56vh, 460px); display: flex; flex-direction: column; padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 8px 28px oklch(0 0 0 / 0.22); }
+.selection-panel-scroll { overflow-y: auto; min-height: 0; }
+.selection-panel-actions { flex: none; display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .selection-panel .prose:last-child p:last-child { margin-bottom: 0; }
 .selection-input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; font-family: var(--font-sans); font-size: 14px; background: var(--paper); color: var(--ink); outline: none; }
 .selection-input:focus { border-color: var(--accent-line); }

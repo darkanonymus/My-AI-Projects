@@ -1,19 +1,27 @@
-# Help me Learn — version 100% locale
+# Help me Learn — fully local edition
 
-Toute l'application tourne **sur ta machine** :
+The whole app runs **on your machine**:
 
-- **Extraction des PDF** → [`pdf_oxide`](https://github.com/yfedoseev/pdf_oxide) (texte/markdown haute-fidélité) + `pypdfium2` (rendu, images intégrées, diagrammes vectoriels). Pipeline hybride : il ne rate plus ni les photos intégrées, ni les diagrammes dessinés, et garde les encadrés colorés comme **texte** (pas comme image).
-- **Rédaction des leçons** → au choix **Gemini 2.5 Flash** (API gratuite, meilleur raisonnement + multimodal natif, **recommandé**), **Claude** (ta clé API, qualité premium), ou ~~Ollama~~ (déprécié). Tu changes de moteur en un clic dans l'app.
+- **PDF extraction** → [`pdf_oxide`](https://github.com/yfedoseev/pdf_oxide) (high-fidelity text/markdown) + `pypdfium2` (rendering, embedded images, vector diagrams). A hybrid pipeline that no longer misses embedded photos or hand-drawn diagrams, and keeps colored callout boxes as **text** (not as images).
+- **Lesson writing** → your choice of **Gemini 2.5 Flash** (free API, best reasoning + native multimodal, **recommended**), **Claude** (your own API key, premium quality), or ~~Ollama~~ (deprecated). Switch engines with one click in the app.
 
-L'interface est exactement celle que tu connais (les 11 sections, quiz, flashcards, plan 40 jours, bibliothèque).
+## Features
+
+- **Lessons in 11 structured sections**, generated from any course text, exercise sheet, PDF, or image (German source material accepted) — with progress tracking, glossary, "to verify" notes, and a suggested next step.
+- **In-lesson contextual Q&A** — select any passage of a lesson to ask a question about it, request a simpler example, or send it straight to the quiz/flashcard bank. The AI grounds its answer in the source material first and clearly labels whether the answer comes from the course or from broader knowledge. Answers can be inserted inline (and removed later) without ever touching the original lesson text.
+- **Hide passages you don't need** — select one or more paragraphs and collapse them into a placeholder bar with **Show** (temporary, session-only) and **Restore** (permanent) actions. The underlying lesson markdown is never modified — exactly like the Q&A insertions, hiding is fully non-destructive and reversible.
+- **Quiz, flashcards, and a 40-day study plan** generated from your lessons, with duplicate-detection so the AI won't add a card or question that already covers the same idea.
+- **Library** — every course is saved automatically; open, review, mark as mastered, or download any of them as a standalone HTML file at any time.
+
+The interface is the one you already know (the 11 sections, quiz, flashcards, 40-day plan, library) — it now also runs your text extraction and AI calls through a local server instead of the browser.
 
 ---
 
-## 1. Prérequis
+## 1. Requirements
 
-- **Python 3.9+** (vérifie : `python3 --version`)
-- **Une clé Gemini** (gratuite, recommandée) — https://ai.google.dev — ou
-- **Une clé Claude** (payante, pour qualité premium) — https://console.anthropic.com
+- **Python 3.9+** (check with `python3 --version`)
+- **A Gemini API key** (free, recommended) — https://ai.google.dev — or
+- **A Claude API key** (paid, for premium quality) — https://console.anthropic.com
 
 ---
 
@@ -22,9 +30,9 @@ L'interface est exactement celle que tu connais (les 11 sections, quiz, flashcar
 ```bash
 cd helpme-learn-local
 
-# (recommandé) un environnement isolé
+# (recommended) an isolated environment
 python3 -m venv .venv
-source .venv/bin/activate          # Windows : .venv\Scripts\activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
 ```
@@ -33,102 +41,102 @@ pip install -r requirements.txt
 
 ## 3. Configuration
 
-Copie `.env.example` en `.env` et renseigne ta(tes) clé(s) API :
+Copy `.env.example` to `.env` and fill in your API key(s):
 
 ```bash
 cp .env.example .env
 ```
 
 ```ini
-# .env — Gemini (recommandé, gratuit)
+# .env — Gemini (recommended, free)
 GOOGLE_API_KEY=AIzaSy...           # https://ai.google.dev/
 GOOGLE_MODEL=gemini-2.5-flash
 
-# .env — Claude (optionnel, payant mais meilleure qualité)
+# .env — Claude (optional, paid but higher quality)
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-sonnet-4-20250514
 
-# Moteur par défaut au lancement : gemini | claude
+# Default engine on launch: gemini | claude
 DEFAULT_PROVIDER=gemini
 ```
 
-> Les clés restent **dans ce fichier sur ta machine** : elles ne touchent jamais le navigateur.
+> Your keys stay **in this file, on your machine** — they never reach the browser.
 
 ---
 
-## 4. Lancer
+## 4. Run it
 
 ```bash
-# Lance le serveur Python (Gemini/Claude sont cloud-based, pas besoin de lancer localement)
+# Start the Python server (Gemini/Claude are cloud-based, nothing else to run locally)
 python server.py
 ```
 
-Ouvre **http://localhost:8000** dans ton navigateur.
+Open **http://localhost:8000** in your browser.
 
-Dans l'app : bouton **« Moteur »** (en bas à gauche) → choisis **Gemini**, **Claude**, ou les deux. Le choix est mémorisé.
-
----
-
-## 4. Comparaison des moteurs
-
-| Moteur | Coût | Raisonnement | Vision | Latence | Mode |
-|--------|------|------------|--------|---------|------|
-| **Gemini 2.5** | ✅ Gratuit (1500 req/jour) | ⭐⭐⭐⭐ | ✅ Natif | ~2-5s | Cloud |
-| **Claude** | 💰 Payant | ⭐⭐⭐⭐⭐ | ❌ Non (texte only) | ~1-3s | Cloud |
-| ~~Ollama~~ | ✅ Gratuit | ⭐⭐ | ❌ | Variable | Local |
-
-**Recommandation** : Commence avec **Gemini** (gratuit, bon ratio qualité/coût). Si tu veux la meilleure qualité pédagogique, bascule sur **Claude**.
+In the app: the **"Engine"** button (bottom left) lets you pick **Gemini**, **Claude**, or both. Your choice is remembered.
 
 ---
 
-## 5. Comment ça marche (architecture)
+## 4. Engine comparison
+
+| Engine | Cost | Reasoning | Vision | Latency | Mode |
+|--------|------|-----------|--------|---------|------|
+| **Gemini 2.5** | ✅ Free (1500 req/day) | ⭐⭐⭐⭐ | ✅ Native | ~2-5s | Cloud |
+| **Claude** | 💰 Paid | ⭐⭐⭐⭐⭐ | ❌ No (text only) | ~1-3s | Cloud |
+| ~~Ollama~~ | ✅ Free | ⭐⭐ | ❌ | Variable | Local |
+
+**Recommendation**: Start with **Gemini** (free, good quality/cost ratio). If you want the best pedagogical quality, switch to **Claude**.
+
+---
+
+## 5. How it works (architecture)
 
 ```
 helpme-learn-local/
-├── server.py        FastAPI : sert l'UI + /api/extract + /api/llm + /api/health
-├── extract.py       Extraction hybride PDF (pdf_oxide + pypdfium2 + analyse de mise en page)
-├── llm.py           Routeur LLM : Gemini (API gratuite) ou Claude (API payante)
+├── server.py        FastAPI: serves the UI + /api/extract + /api/llm + /api/health
+├── extract.py       Hybrid PDF extraction (pdf_oxide + pypdfium2 + layout analysis)
+├── llm.py           LLM router: Gemini (free API) or Claude (paid API)
 ├── requirements.txt
 ├── .env.example
-└── web/             L'interface (identique, mais extraction + IA passent par le serveur)
+└── web/             The interface (same as before, but extraction + AI now go through the server)
 ```
 
 - `POST /api/extract` (PDF) → `{ text, pages, truncated, images:[{id,page,w,h,url}] }`
-  - **Texte** : `pdf_oxide.to_markdown` (ordre de lecture, titres, tableaux).
-  - **Images raster** : bounding boxes des objets-image du PDF (via pdfium) → jamais manquées.
-  - **Diagrammes vectoriels** : rendu de la page → grille d'encre **moins** le texte **moins** les images → composantes connexes → recadrage. Les blocs trop denses en texte (encadrés colorés) sont **gardés comme texte**.
-  - Un marqueur `[[FIG:fN]]` est inséré à la position de lecture de chaque figure ; l'IA réinsère la vraie image au bon endroit.
-- `POST /api/llm` `{ system, prompt, provider, model }` → `{ text }` (Gemini ou Claude).
+  - **Text**: `pdf_oxide.to_markdown` (reading order, headings, tables).
+  - **Raster images**: bounding boxes of the PDF's image objects (via pdfium) → never missed.
+  - **Vector diagrams**: page render → ink grid **minus** text **minus** images → connected components → cropping. Text-dense blocks (colored callout boxes) are **kept as text**.
+  - A `[[FIG:fN]]` marker is inserted at each figure's reading position; the AI re-inserts the actual image at the right spot.
+- `POST /api/llm` `{ system, prompt, provider, model }` → `{ text }` (Gemini or Claude).
 
 ---
 
-## 6. Réglages de l'extraction
+## 6. Extraction settings
 
-Dans `extract.py`, en haut, quelques curseurs sûrs à ajuster si besoin :
+At the top of `extract.py`, a few safe knobs you can tune if needed:
 
-| Réglage | Effet |
+| Setting | Effect |
 |---|---|
-| `RENDER_SCALE` | Netteté des images extraites (2.0 ≈ 144 dpi). Monte à 3.0 pour plus de détail. |
-| `MIN_FIG_FRAC_W/H` | Taille minimale d'une figure (en % de la page). Baisse pour capter de petits schémas. |
-| `TEXTBOX_CHAR_COV` | Seuil texte/figure. **Monte-le** (ex. 0.22) si des encadrés colorés sont pris pour des images ; **baisse-le** si un diagramme avec beaucoup de labels est ignoré. |
-| `MAX_PAGES`, `FIG_CAP` | Limites de pages et d'images par document. |
+| `RENDER_SCALE` | Sharpness of extracted images (2.0 ≈ 144 dpi). Raise to 3.0 for more detail. |
+| `MIN_FIG_FRAC_W/H` | Minimum size of a figure (as % of the page). Lower it to catch small diagrams. |
+| `TEXTBOX_CHAR_COV` | Text-vs-figure threshold. **Raise it** (e.g. 0.22) if colored callout boxes get mistaken for images; **lower it** if a diagram with lots of labels gets ignored. |
+| `MAX_PAGES`, `FIG_CAP` | Page and per-document image limits. |
 
 ---
 
-## 7. Dépannage
+## 7. Troubleshooting
 
-- **« Le serveur local ne répond pas »** → `python server.py` n'est pas lancé, ou pas sur le port 8000.
-- **« Aucune clé Gemini configurée »** → va sur https://ai.google.dev/, crée une clé gratuite, ajoute `GOOGLE_API_KEY` dans `.env` puis relance le serveur.
-- **« Limite Gemini atteinte (1500 req/jour) »** → Bascule sur Claude, ou réessaie demain. (Astuce : optimise tes prompts pour réduire les appels.)
-- **« Erreur 401 — clé Gemini invalide »** → Vérifie que tu as copié la bonne clé depuis https://ai.google.dev/. Relance le serveur.
-- **« Erreur 429 — trop de requêtes »** → Attends quelques secondes avant de réessayer. Avec le plan gratuit, respecte les limites : max 1500 requêtes par jour.
-- **« Aucune clé Claude configurée »** → ajoute `ANTHROPIC_API_KEY` dans `.env` puis relance le serveur (optionnel, pour qualité supérieure).
-- **L'UI ne se charge pas hors-ligne la 1ʳᵉ fois** → React/Babel/KaTeX sont chargés depuis un CDN au premier lancement puis mis en cache. Pour un offline total, on peut « vendoriser » ces fichiers dans `web/` (demande-moi).
+- **"The local server isn't responding"** → `python server.py` isn't running, or not on port 8000.
+- **"No Gemini key configured"** → go to https://ai.google.dev/, create a free key, add `GOOGLE_API_KEY` to `.env`, then restart the server.
+- **"Gemini quota reached (1500 req/day)"** → switch to Claude, or try again tomorrow. (Tip: tighten your prompts to use fewer calls.)
+- **"Error 401 — invalid Gemini key"** → make sure you copied the right key from https://ai.google.dev/. Restart the server.
+- **"Error 429 — too many requests"** → wait a few seconds before retrying. On the free plan, stay under 1500 requests/day.
+- **"No Claude key configured"** → add `ANTHROPIC_API_KEY` to `.env` then restart the server (optional, for higher quality).
+- **The UI doesn't load offline on first launch** → React/Babel/KaTeX are loaded from a CDN on first run, then cached. For full offline use, these files can be vendored into `web/` (just ask).
 
 ---
 
-## 8. Test rapide de l'extracteur (sans l'UI)
+## 8. Quick extractor test (without the UI)
 
 ```bash
-python -c "from extract import extract_pdf; r=extract_pdf(open('mon_cours.pdf','rb').read()); print('pages:',r['pages'],'| images:',len(r['images'])); print(r['text'][:800])"
+python -c "from extract import extract_pdf; r=extract_pdf(open('my_course.pdf','rb').read()); print('pages:',r['pages'],'| images:',len(r['images'])); print(r['text'][:800])"
 ```

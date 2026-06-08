@@ -32,6 +32,10 @@ function Icon({ name, size = 18 }) {
     library: <><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></>,
     open:    <><path d="M14 3h7v7"/><path d="M21 3 11 13"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></>,
     plusbig: <><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></>,
+    message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>,
+    idea:    <><path d="M9 21h6M10 17.5h4"/><path d="M12 3a6.5 6.5 0 0 0-3.8 11.8c.6.5 1.3 1.3 1.3 2.2h5c0-.9.7-1.7 1.3-2.2A6.5 6.5 0 0 0 12 3z"/></>,
+    hide:    <><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-6 0-9.27-5.7-10-8 .47-1.49 1.47-3.32 3.06-4.94M9.9 4.24A9.5 9.5 0 0 1 12 4c6 0 9.27 5.7 10 8a17.6 17.6 0 0 1-2.27 3.94M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M2 2l20 20"/></>,
+    eye:     <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></>,
   };
   return <svg {...p}>{paths[name] || null}</svg>;
 }
