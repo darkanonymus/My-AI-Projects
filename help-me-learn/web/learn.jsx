@@ -205,7 +205,9 @@ function CollapsedPassage({ hidden, onRestore, children }) {
           </button>
         </span>
       </div>
-      {revealed && <div className="hidden-passage-content">{children}</div>}
+      <div className="hidden-passage-content" data-open={revealed}>
+        <div className="hidden-passage-content-inner">{children}</div>
+      </div>
     </div>
   );
 }
