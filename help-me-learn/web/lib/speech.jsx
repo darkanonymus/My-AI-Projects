@@ -724,20 +724,22 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   function resumeWake() { if (wakeRef.current) wakeRef.current.resume(); }
 
   // duck the reading so the mic can hear you over the lesson while hands-free is on
-  useEffect(() => { if (eng && eng.setVolume) eng.setVolume(wakeOn ? 0.45 : 1); }, [wakeOn, eng, serverTTS]); // eslint-disable-line
+  useEffect(() => { if (eng && eng.setVolume) eng.setVolume(wakeOn ? 0.35 : 1); }, [wakeOn, eng, serverTTS]); // eslint-disable-line
 
-  /* a VAD speech segment ended → transcribe; if the wake word appears anywhere
-     (tolerant to reading bleeding in), the words after it are the question. */
+  /* a VAD speech segment ended → transcribe. Do NOT pause the mic here: it must
+     keep listening continuously so it catches YOU even while it's busy
+     transcribing the reading's echo. Only when the wake word is actually found
+     do we pause the mic and hand off to the question flow. */
   async function onUtterance(blob) {
-    if (wakeRef.current) wakeRef.current.pause();   // stop capturing while we think/answer
     let text = "";
-    try { text = await sttBlob(blob, "wake.wav"); } catch (_) { resumeWake(); return; }
+    try { text = await sttBlob(blob, "wake.wav"); } catch (_) { return; }
     const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
     const w = norm(wakewordRef.current || "lia");
     const words = text.trim().split(/\s+/).filter(Boolean);
     let pos = -1;
     for (let i = 0; i < words.length; i++) { if (w && norm(words[i]).indexOf(w) >= 0) { pos = i; break; } }
-    if (pos < 0) { resumeWake(); return; }                       // not addressed to the assistant
+    if (pos < 0) return;                                          // not for us → keep listening (no pause)
+    if (wakeRef.current) wakeRef.current.pause();                 // matched → free the mic for the question/answer
     const remainder = words.slice(pos + 1).join(" ").trim();
     if (eng && status === "playing") eng.pause();
     if (remainder.split(/\s+/).filter(Boolean).length >= 2) doAsk(remainder);   // asked in one breath
