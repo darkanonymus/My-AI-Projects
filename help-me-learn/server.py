@@ -33,6 +33,7 @@ from starlette.concurrency import run_in_threadpool
 
 import llm
 import tts
+import stt
 from extract import extract_pdf
 
 ROOT = pathlib.Path(__file__).parent
@@ -76,6 +77,7 @@ async def health():
         "claude": llm.claude_status(),
         "ollama": await llm.ollama_status(),
         "tts": tts.status(),
+        "stt": stt.status(),
         "default_provider": os.environ.get("DEFAULT_PROVIDER", "gemini"),
     }
 
@@ -109,6 +111,26 @@ async def api_tts(body: TTSBody):
         media_type="audio/wav",
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+@app.post("/api/stt")
+async def api_stt(audio: UploadFile = File(...), lang: str = "fr"):
+    """Transcribe a recorded question (Whisper) → {text}. Cross-platform
+    (incl. iOS) replacement for the browser's SpeechRecognition. 503 when
+    faster-whisper isn't installed — the frontend then falls back to Web Speech."""
+    if not stt.available():
+        raise HTTPException(status_code=503, detail="Transcription indisponible : lance « pip install faster-whisper ».")
+    data = await audio.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Audio vide.")
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Enregistrement trop long.")
+    suffix = "." + ((audio.filename or "q.webm").rsplit(".", 1)[-1] or "webm")
+    try:
+        text = await run_in_threadpool(stt.transcribe, data, lang, suffix)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Transcription impossible : {e}")
+    return {"text": text}
 
 
 class StateBody(BaseModel):

@@ -17,3 +17,6 @@ Pillow>=10.0                 # crop + JPEG encode
 # background listening. Without it the app falls back to browser Web Speech.
 # After install, fetch a voice: python scripts/download_voices.py
 piper-tts>=1.2               # offline neural TTS (https://github.com/rhasspy/piper)
+# Speech-to-text for hands-free voice Q&A (incl. iOS, where browser STT is
+# unavailable). Model downloads on first use. Falls back to Web Speech if absent.
+faster-whisper>=1.0          # offline STT (CTranslate2 Whisper)

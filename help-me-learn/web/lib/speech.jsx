@@ -528,6 +528,60 @@ class AudioReader {
   }
 }
 
+/* ---- hands-free wake word (Picovoice Porcupine, in-app) ----
+   Loads the engine as ESM from a CDN (its WASM is embedded as base64, so no
+   fragile relative-asset fetch) and the model + keyword files from our own
+   /vendor/picovoice/ (works on iOS Safari too — it processes audio itself,
+   unlike Web Speech). Needs a free Picovoice AccessKey. On detection it hands
+   off to the existing question flow. */
+/* esm.sh (not jsdelivr): it bundles the packages' CommonJS deps into real ESM,
+   avoiding a runtime "require is not defined" that jsdelivr's raw ESM hits. */
+const PV_ESM = {
+  porcupine: "https://esm.sh/@picovoice/porcupine-web@4.0.0",
+  wvp: "https://esm.sh/@picovoice/web-voice-processor@4.0.10",
+};
+const WAKE_KEYWORDS = {
+  Jarvis: "vendor/picovoice/jarvis_wasm.ppn",
+  Computer: "vendor/picovoice/computer_wasm.ppn",
+  Bumblebee: "vendor/picovoice/bumblebee_wasm.ppn",
+};
+
+class WakeWord {
+  constructor() { this.worker = null; this.wvp = null; this.active = false; this.paused = false; }
+  async start(accessKey, keywordLabel, onDetect) {
+    if (this.active) return;
+    const ppn = WAKE_KEYWORDS[keywordLabel] || WAKE_KEYWORDS.Jarvis;
+    const [pv, wvpMod] = await Promise.all([import(PV_ESM.porcupine), import(PV_ESM.wvp)]);
+    this.wvp = wvpMod.WebVoiceProcessor;
+    this.worker = await pv.PorcupineWorker.create(
+      accessKey,
+      [{ label: keywordLabel, publicPath: ppn, sensitivity: 0.6, customWritePath: "hml_kw_" + keywordLabel + ".ppn", forceWrite: true }],
+      (detection) => { if (!this.paused && detection && onDetect) onDetect(detection.label); },
+      { publicPath: "vendor/picovoice/porcupine_params.pv", customWritePath: "hml_porcupine_params.pv", forceWrite: true },
+    );
+    await this.wvp.subscribe(this.worker);
+    this.active = true; this.paused = false;
+  }
+  pause() {   // release the mic while we record the question
+    if (this.active && !this.paused && this.wvp && this.worker) {
+      try { this.wvp.unsubscribe(this.worker); } catch (_) {}
+      this.paused = true;
+    }
+  }
+  resume() {
+    if (this.active && this.paused && this.wvp && this.worker) {
+      try { this.wvp.subscribe(this.worker); } catch (_) {}
+      this.paused = false;
+    }
+  }
+  async stop() {
+    this.active = false; this.paused = false;
+    try { if (this.wvp && this.worker) await this.wvp.unsubscribe(this.worker); } catch (_) {}
+    try { if (this.worker) { if (this.worker.release) await this.worker.release(); if (this.worker.terminate) this.worker.terminate(); } } catch (_) {}
+    this.worker = null;
+  }
+}
+
 function ReadAloudBar({ chapter, lang, onClose }) {
   const voices = useVoices();
   const bcp47 = LANG_BCP47[lang] || "fr-FR";
@@ -544,14 +598,24 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   const [showHint, setShowHint] = useState(() => { try { return localStorage.getItem("hml.ttsHintSeen") !== "1"; } catch (_) { return true; } });
   const engineRef = useRef(null);
   const recRef = useRef(null);
+  const mediaRef = useRef(null);                       // { recorder, stream, chunks } for server STT
   const [serverTTS, setServerTTS] = useState(null);   // null = detecting, then true/false
+  const [serverSTT, setServerSTT] = useState(false);  // Whisper available → record + /api/stt
 
-  /* detect server-side TTS (Piper). If present we use AudioReader (real audio,
-     plays in the background + lock-screen controls); otherwise Web Speech. */
+  // hands-free wake word (Porcupine) — opt-in, needs a Picovoice AccessKey
+  const wakeRef = useRef(null);
+  const [wakeOn, setWakeOn] = useState(() => { try { return localStorage.getItem("hml.wakeOn") === "1"; } catch (_) { return false; } });
+  const [wakeKey, setWakeKey] = useState(() => { try { return localStorage.getItem("hml.pvKey") || ""; } catch (_) { return ""; } });
+  const [wakeword, setWakeword] = useState(() => { try { return localStorage.getItem("hml.wakeword") || "Jarvis"; } catch (_) { return "Jarvis"; } });
+  const [wakeStatus, setWakeStatus] = useState("idle");   // idle | loading | on | error
+  const [wakeErr, setWakeErr] = useState("");
+
+  /* detect server-side TTS (Piper) + STT (Whisper) in one probe. TTS picks the
+     audio engine; STT lets us hear a question on every platform (incl. iOS). */
   useEffect(() => {
     let alive = true;
     fetch("/api/health").then(r => r.json())
-      .then(h => { if (alive) setServerTTS(!!(h && h.tts && h.tts.available)); })
+      .then(h => { if (alive) { setServerTTS(!!(h && h.tts && h.tts.available)); setServerSTT(!!(h && h.stt && h.stt.available)); } })
       .catch(() => { if (alive) setServerTTS(false); });
     return () => { alive = false; };
   }, []);
@@ -621,6 +685,32 @@ function ReadAloudBar({ chapter, lang, onClose }) {
     return () => clearTimeout(t);
   }, []); // eslint-disable-line
 
+  // start/stop the wake-word engine when it's toggled on (and a key is set)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (wakeRef.current) { try { await wakeRef.current.stop(); } catch (_) {} wakeRef.current = null; }
+      if (!wakeOn || !wakeKey) { setWakeStatus("idle"); return; }
+      setWakeStatus("loading"); setWakeErr("");
+      const w = new WakeWord();
+      try {
+        await w.start(wakeKey, wakeword, () => onWake());
+        if (cancelled) { await w.stop(); return; }
+        wakeRef.current = w; setWakeStatus("on");
+      } catch (e) {
+        if (!cancelled) { setWakeStatus("error"); setWakeErr((e && e.message) || String(e)); }
+      }
+    })();
+    return () => { cancelled = true; if (wakeRef.current) { try { wakeRef.current.stop(); } catch (_) {} wakeRef.current = null; } };
+  }, [wakeOn, wakeKey, wakeword]); // eslint-disable-line
+
+  /* wake word heard → pause listening for the keyword, then ask a question */
+  function onWake() {
+    if (wakeRef.current) wakeRef.current.pause();
+    startListening();
+  }
+  function resumeWake() { if (wakeRef.current) wakeRef.current.resume(); }
+
   if (serverTTS === false && !speechSupported()) {
     return (
       <div className="read-bar">
@@ -641,13 +731,80 @@ function ReadAloudBar({ chapter, lang, onClose }) {
     else eng.start(null);
   };
 
-  function stopRec() { try { if (recRef.current) { recRef.current.onend = null; recRef.current.stop(); } } catch (_) {} recRef.current = null; }
+  function stopRec() {
+    try { if (recRef.current) { recRef.current.onend = null; recRef.current.stop(); } } catch (_) {} recRef.current = null;
+    try {
+      const m = mediaRef.current;
+      if (m) {
+        if (m._timer) clearTimeout(m._timer);
+        if (m.recorder && m.recorder.state !== "inactive") { m.recorder.onstop = null; m.recorder.stop(); }
+        if (m.stream) m.stream.getTracks().forEach(t => t.stop());
+      }
+    } catch (_) {}
+    mediaRef.current = null;
+  }
 
+  /* dispatcher: record→/api/stt (Whisper, works on iOS) when available,
+     else the browser's SpeechRecognition (Android/desktop). */
   function startListening() {
-    const Ctor = getRecognitionCtor();
-    if (!Ctor) { setAsk({ phase: "error", error: "La reconnaissance vocale n'est pas supportée par ce navigateur (essaie Chrome ou Edge)." }); return; }
     if (eng && status === "playing") eng.pause();
     if (eng) eng.stopAside();
+    if (serverSTT && navigator.mediaDevices && window.MediaRecorder) startListeningServer();
+    else startListeningWeb();
+  }
+
+  async function startListeningServer() {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { setAsk({ phase: "error", error: "Accès au micro refusé — autorise le micro dans le navigateur." }); return; }
+    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+    const mime = (window.MediaRecorder.isTypeSupported ? types.find(t => MediaRecorder.isTypeSupported(t)) : "") || "";
+    const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const m = mediaRef.current; mediaRef.current = null;
+      try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      if (!m || m.cancelled) return;
+      const blob = new Blob(chunks, { type: mime || "audio/webm" });
+      if (!blob.size) { setAsk(a => (a && a.phase === "listening") ? null : a); return; }
+      transcribeAndAsk(blob, mime);
+    };
+    mediaRef.current = { recorder, stream, chunks, cancelled: false, _timer: null };
+    setAsk({ phase: "listening", recording: true });
+    try { recorder.start(); } catch (_) {}
+    mediaRef.current._timer = setTimeout(() => finishRecording(), 15000);   // safety cap
+  }
+
+  function finishRecording() {
+    const m = mediaRef.current;
+    if (!m) return;
+    if (m._timer) clearTimeout(m._timer);
+    setAsk(a => (a && a.phase === "listening") ? { phase: "thinking", question: "…" } : a);
+    try { if (m.recorder && m.recorder.state !== "inactive") m.recorder.stop(); } catch (_) {}
+  }
+
+  async function transcribeAndAsk(blob, mime) {
+    setAsk({ phase: "thinking", question: "…" });
+    try {
+      const ext = (mime || "").indexOf("mp4") >= 0 ? "m4a" : (mime || "").indexOf("ogg") >= 0 ? "ogg" : "webm";
+      const fd = new FormData();
+      fd.append("audio", blob, "question." + ext);
+      fd.append("lang", lang);
+      const r = await fetch("/api/stt", { method: "POST", body: fd });
+      if (!r.ok) throw new Error("Transcription (" + r.status + ")");
+      const data = await r.json();
+      const q = ((data && data.text) || "").trim();
+      if (!q) { setAsk({ phase: "error", error: "Je n'ai pas saisi de question. Réessaie." }); return; }
+      doAsk(q);
+    } catch (e) {
+      setAsk({ phase: "error", error: (e && e.message) || String(e) });
+    }
+  }
+
+  function startListeningWeb() {
+    const Ctor = getRecognitionCtor();
+    if (!Ctor) { setAsk({ phase: "error", error: "La reconnaissance vocale n'est pas supportée par ce navigateur (essaie Chrome ou Edge)." }); return; }
     setAsk({ phase: "listening", interim: "" });
     const rec = new Ctor();
     rec.lang = bcp47; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
@@ -685,14 +842,16 @@ function ReadAloudBar({ chapter, lang, onClose }) {
       const answer = (data && data.reponse) ? data.reponse : "";
       if (!answer || answer.length < 2) { setAsk({ phase: "error", question, error: "Réponse vide du moteur." }); return; }
       setAsk({ phase: "answer", question, answer, source: data.trouveDansLeCours ? "cours" : "hors-cours" });
-      eng.speakAside(answer);
+      if (eng) eng.speakAside(answer);
+      resumeWake();
     } catch (e) {
       setAsk({ phase: "error", question, error: (e && e.message) || String(e) });
+      resumeWake();
     }
   }
 
-  function closeAsk() { stopRec(); eng.stopAside(); setAsk(null); }
-  function resumeReading() { stopRec(); setAsk(null); eng.resumeFromCurrent(); }
+  function closeAsk() { if (mediaRef.current) mediaRef.current.cancelled = true; stopRec(); if (eng) eng.stopAside(); setAsk(null); resumeWake(); }
+  function resumeReading() { stopRec(); setAsk(null); if (eng) eng.resumeFromCurrent(); resumeWake(); }
 
   const listening = !!(ask && ask.phase === "listening");
 
@@ -710,7 +869,8 @@ function ReadAloudBar({ chapter, lang, onClose }) {
           {ask.phase === "listening" && (
             <div className="read-ask-row">
               <span className="read-ask-pulse"><SpIcon name="mic" size={15} /></span>
-              <span className="read-ask-live">{ask.interim || "J'écoute ta question…"}</span>
+              <span className="read-ask-live">{ask.recording ? "J'enregistre… pose ta question, puis « Terminé »." : (ask.interim || "J'écoute ta question…")}</span>
+              {ask.recording && <button className="btn btn-sm btn-primary" onClick={finishRecording}>Terminé</button>}
               <button className="btn btn-sm btn-ghost" onClick={closeAsk}>Annuler</button>
             </div>
           )}
@@ -815,6 +975,42 @@ function ReadAloudBar({ chapter, lang, onClose }) {
                 </select>
               )}
             </div>
+            {/* hands-free wake word */}
+            <div className="read-more-row">
+              <span className="read-more-label">{T("raWake", "Mot de réveil")}</span>
+              <button className="btn btn-sm" data-active={wakeOn}
+                onClick={() => { const nv = !wakeOn; setWakeOn(nv); try { localStorage.setItem("hml.wakeOn", nv ? "1" : "0"); } catch (_) {} }}>
+                {wakeOn ? T("raWakeOn", "Activé") : T("raWakeOff", "Désactivé")}
+              </button>
+            </div>
+            {wakeOn && (
+              <React.Fragment>
+                <div className="read-more-row">
+                  <span className="read-more-label">{T("raWakeWord", "Mot")}</span>
+                  <select className="read-voice" value={wakeword}
+                    onChange={e => { setWakeword(e.target.value); try { localStorage.setItem("hml.wakeword", e.target.value); } catch (_) {} }}>
+                    {Object.keys(WAKE_KEYWORDS).map(k => <option key={k} value={k}>{k}</option>)}
+                  </select>
+                </div>
+                {!wakeKey && (
+                  <div className="read-more-row" style={{ flexDirection: "column", alignItems: "stretch", gap: "var(--space-1)" }}>
+                    <input type="password" className="read-voice" style={{ width: "100%" }}
+                      placeholder={T("raWakeKey", "Clé Picovoice (AccessKey)")}
+                      onChange={e => { const v = e.target.value.trim(); setWakeKey(v); try { localStorage.setItem("hml.pvKey", v); } catch (_) {} }} />
+                    <a href="https://console.picovoice.ai/" target="_blank" rel="noreferrer" style={{ fontSize: "var(--fs-small)" }}>{T("raWakeGetKey", "Obtenir une clé gratuite →")}</a>
+                  </div>
+                )}
+                <div className="read-more-row">
+                  <span className="read-more-label" style={{ fontSize: "var(--fs-small)", color: wakeStatus === "error" ? "var(--bad)" : "var(--ink-faint)", textAlign: "right" }}>
+                    {wakeStatus === "loading" ? T("raWakeLoading", "Chargement…")
+                      : wakeStatus === "on" ? ("🎙 " + T("raWakeReady", "dis « ") + wakeword + " »")
+                      : wakeStatus === "error" ? (wakeErr || "Erreur")
+                      : !wakeKey ? T("raWakeNeedKey", "colle ta clé pour activer")
+                      : ""}
+                  </span>
+                </div>
+              </React.Fragment>
+            )}
           </div>
         )}
       </div>
