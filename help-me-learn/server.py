@@ -83,16 +83,18 @@ async def health():
 
 
 class TTSBody(BaseModel):
-    text: str
+    text: str | None = None
     lang: str = "fr"
+    segments: list[dict] | None = None   # [{text, lang}] → one gapless multi-voice clip
 
 
 @app.post("/api/tts")
 async def api_tts(body: TTSBody):
     """Synthesize speech (Piper) → WAV bytes for background <audio> playback.
-    503 with a clear message when Piper/voices aren't set up — the frontend
-    then falls back to Web Speech (foreground only)."""
-    if not (body.text or "").strip():
+    Accepts `text`+`lang`, or `segments` (a sentence's fr/de parts) for one
+    gapless clip. 503 when Piper/voices aren't set up — the frontend then
+    falls back to Web Speech (foreground only)."""
+    if not body.segments and not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Texte vide.")
     if not tts.available():
         st = tts.status()
@@ -103,7 +105,10 @@ async def api_tts(body: TTSBody):
         )
         raise HTTPException(status_code=503, detail=hint)
     try:
-        audio = await run_in_threadpool(tts.synthesize, body.text, body.lang)
+        if body.segments:
+            audio = await run_in_threadpool(tts.synthesize_segments, body.segments)
+        else:
+            audio = await run_in_threadpool(tts.synthesize, body.text, body.lang)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Synthèse vocale impossible : {e}")
     return Response(

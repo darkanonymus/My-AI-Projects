@@ -124,9 +124,12 @@ function buildQueue(rootSelector, opts) {
   const items = [];
   const pushText = (node, txt, n) => {
     splitSentences(txt).forEach(s => {
-      segmentByLang(s, matcher, mainLang).forEach(seg => {
-        if (seg.text.trim()) items.push({ node, text: seg.text, lang: seg.lang, sectionN: n });
-      });
+      // one item per SENTENCE, carrying its language segments — the audio engine
+      // synthesizes the whole sentence as ONE gapless clip (no mid-sentence chop).
+      const segs = segmentByLang(s, matcher, mainLang)
+        .map(seg => ({ text: seg.text, lang: seg.lang }))
+        .filter(seg => seg.text.trim());
+      if (segs.length) items.push({ node, text: s, segments: segs, lang: segs[0].lang, sectionN: n });
     });
   };
   root.querySelectorAll(".section-card").forEach(card => {
@@ -226,19 +229,29 @@ class LessonReader {
     const item = this.queue[this.idx];
     if (item.node && document.contains(item.node)) this._highlight(item.node, item.sectionN);
     this.onState({ caption: item.text, section: item.sectionN });
-    const u = new SpeechSynthesisUtterance(item.text);
-    const v = this._voiceFor(item.lang || this.mainLang);
-    if (v) u.voice = v;
-    u.lang = (v && v.lang) || LANG_BCP47[item.lang] || this.bcp47;
-    u.rate = this.rate;
-    const advance = () => {
-      if (this.current !== u || !this.playing) return;   // ignore stale/cancelled utterances
-      this.idx++; this._speakCurrent();
+    // a sentence may carry fr/de segments — speak them in sequence with the
+    // right voice each, then advance to the next sentence.
+    const segs = (item.segments && item.segments.length) ? item.segments : [{ text: item.text, lang: item.lang || this.mainLang }];
+    let si = 0;
+    const speakSeg = () => {
+      if (!this.playing) return;
+      if (si >= segs.length) { this.idx++; this._speakCurrent(); return; }
+      const seg = segs[si];
+      const u = new SpeechSynthesisUtterance(seg.text);
+      const v = this._voiceFor(seg.lang || this.mainLang);
+      if (v) u.voice = v;
+      u.lang = (v && v.lang) || LANG_BCP47[seg.lang] || this.bcp47;
+      u.rate = this.rate;
+      const advance = () => {
+        if (this.current !== u || !this.playing) return;   // ignore stale/cancelled utterances
+        si++; speakSeg();
+      };
+      u.onend = advance;
+      u.onerror = advance;
+      this.current = u;
+      window.speechSynthesis.speak(u);
     };
-    u.onend = advance;
-    u.onerror = advance;
-    this.current = u;
-    window.speechSynthesis.speak(u);
+    speakSeg();
   }
   start(sectionN) {
     window.speechSynthesis.cancel();
@@ -403,13 +416,23 @@ class AudioReader {
 
   /* fetch (and cache) a clip's object URL — promises are cached so a prefetch
      and the real play share one request; resolved URLs are LRU-revoked. */
-  _clipURL(text, lang) {
-    const key = (lang || this.mainLang) + "|" + text;
+  _segmentsOf(item) {
+    return (item.segments && item.segments.length)
+      ? item.segments
+      : [{ text: item.text, lang: item.lang || this.mainLang }];
+  }
+  _clipURL(item) {
+    const segs = this._segmentsOf(item);
+    const key = segs.map(s => (s.lang || this.mainLang) + ":" + s.text).join("||");
     if (this._urls.has(key)) return this._urls.get(key);
+    // one /api/tts request per SENTENCE → one gapless clip (multi-voice if mixed)
+    const body = segs.length === 1
+      ? { text: segs[0].text, lang: segs[0].lang || this.mainLang }
+      : { segments: segs };
     const p = fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, lang: lang || this.mainLang }),
+      body: JSON.stringify(body),
     }).then(async r => {
       if (!r.ok) throw new Error("TTS " + r.status);
       return URL.createObjectURL(await r.blob());
@@ -426,7 +449,7 @@ class AudioReader {
   }
   _prefetch(i) {
     const it = this.queue[i];
-    if (it && it.text) this._clipURL(it.text, it.lang).catch(() => {});
+    if (it && (it.text || it.segments)) this._clipURL(it).catch(() => {});
   }
   async _playCurrent() {
     if (!this.playing || this.mode !== "lesson") return;
@@ -437,7 +460,7 @@ class AudioReader {
     this.onState({ caption: item.text, section: item.sectionN });
     this._prefetch(this.idx + 1);
     let url;
-    try { url = await this._clipURL(item.text, item.lang); }
+    try { url = await this._clipURL(item); }
     catch (e) { if (myToken === this._token && this.playing) { this.idx++; this._playCurrent(); } return; }
     if (myToken !== this._token || !this.playing) return;   // stale after stop/skip
     this.audio.src = url;
@@ -512,7 +535,7 @@ class AudioReader {
     this.mode = "aside"; this.playing = true; this._asideDone = onDone || null;
     const clean = plainForSpeech(text);
     let url;
-    try { url = await this._clipURL(clean, this.mainLang); }
+    try { url = await this._clipURL({ text: clean, lang: this.mainLang }); }
     catch (e) { this.mode = "lesson"; if (onDone) onDone(); return; }
     if (this.mode !== "aside") return;
     this.audio.src = url; this.audio.playbackRate = this.rate;

@@ -141,6 +141,48 @@ def _synth_wav(voice, text: str) -> bytes:
     return buf.getvalue()
 
 
+def synthesize_segments(segments: list[dict]) -> bytes:
+    """Synthesize a list of [{text, lang}] into ONE gapless WAV — each segment
+    spoken by its language's voice, concatenated. Lets a French sentence read
+    its German terms in a German voice without the choppiness of separate clips.
+    All Piper medium voices are 22050 Hz / 16-bit / mono, so PCM concatenates
+    cleanly. Cached as a whole (and each segment is cached individually too)."""
+    segs = [s for s in (segments or []) if (s.get("text") or "").strip()]
+    if not segs:
+        raise ValueError("Aucun segment.")
+    if len(segs) == 1:
+        return synthesize(segs[0]["text"], segs[0].get("lang", "fr"))
+
+    sig = "||".join(f"{(s.get('lang') or 'fr')[:2]}:{s['text']}" for s in segs)
+    key = hashlib.sha1(("seg|" + sig).encode("utf-8")).hexdigest()
+    cache = CACHE_DIR / f"{key}.wav"
+    if cache.exists():
+        try:
+            return cache.read_bytes()
+        except Exception:  # noqa: BLE001
+            pass
+
+    nchannels = sampwidth = framerate = None
+    pcm_parts: list[bytes] = []
+    for s in segs:
+        with wave.open(io.BytesIO(synthesize(s["text"], s.get("lang", "fr"))), "rb") as wf:
+            nchannels, sampwidth, framerate = wf.getnchannels(), wf.getsampwidth(), wf.getframerate()
+            pcm_parts.append(wf.readframes(wf.getnframes()))
+
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wf:
+        wf.setnchannels(nchannels or 1)
+        wf.setsampwidth(sampwidth or 2)
+        wf.setframerate(framerate or 22050)
+        wf.writeframes(b"".join(pcm_parts))
+    data = out.getvalue()
+    try:
+        cache.write_bytes(data)
+    except Exception:  # noqa: BLE001
+        pass
+    return data
+
+
 def synthesize(text: str, lang: str = "fr") -> bytes:
     """Return WAV bytes for `text` in `lang` ('fr'/'de'/'en'). Cached on disk."""
     text = (text or "").strip()
