@@ -36,6 +36,11 @@ function Icon({ name, size = 18 }) {
     idea:    <><path d="M9 21h6M10 17.5h4"/><path d="M12 3a6.5 6.5 0 0 0-3.8 11.8c.6.5 1.3 1.3 1.3 2.2h5c0-.9.7-1.7 1.3-2.2A6.5 6.5 0 0 0 12 3z"/></>,
     hide:    <><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-6 0-9.27-5.7-10-8 .47-1.49 1.47-3.32 3.06-4.94M9.9 4.24A9.5 9.5 0 0 1 12 4c6 0 9.27 5.7 10 8a17.6 17.6 0 0 1-2.27 3.94M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M2 2l20 20"/></>,
     eye:     <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></>,
+    sidebar: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></>,
+    menu:    <path d="M4 6h16M4 12h16M4 18h16"/>,
+    play:    <path d="M7 5l12 7-12 7z"/>,
+    pause:   <><path d="M9 5v14"/><path d="M15 5v14"/></>,
+    speaker: <><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></>,
   };
   return <svg {...p}>{paths[name] || null}</svg>;
 }
@@ -71,26 +76,66 @@ function Ring({ value, size = 60, stroke = 6, color = "var(--accent)" }) {
 /* empty-state block */
 function Empty({ icon, title, children }) {
   return (
-    <div className="card" style={{ padding: "44px 30px", textAlign: "center", maxWidth: 520, margin: "8px auto" }}>
-      <div style={{ width: 56, height: 56, borderRadius: 16, margin: "0 auto 16px", display: "grid", placeItems: "center",
-        background: "var(--accent-soft)", color: "var(--accent-deep)" }}>
-        <Icon name={icon} size={26} />
-      </div>
-      <h3 style={{ margin: "0 0 8px", fontSize: 20 }}>{title}</h3>
-      <div className="soft" style={{ fontSize: 15.5, lineHeight: 1.6 }}>{children}</div>
+    <div className="card empty-state">
+      <div className="empty-icon"><Icon name={icon} size={26} /></div>
+      <h3 className="empty-title">{title}</h3>
+      <div className="empty-body">{children}</div>
     </div>
   );
 }
 
-/* section heading used across tabs */
-function PageHead({ kicker, title, children }) {
+/* ---- scroll reveal (IntersectionObserver, zero dependency) ----
+   Attach the returned ref to an element carrying className "reveal": it starts
+   hidden (CSS) and gets data-revealed="true" the first time it scrolls into
+   view. Honors prefers-reduced-motion and missing IO support by revealing
+   immediately, so content is never trapped invisible. */
+function useReveal({ threshold = 0.12, margin = "0px 0px -8% 0px", once = true } = {}) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || typeof IntersectionObserver === "undefined") {
+      el.setAttribute("data-revealed", "true");
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          entry.target.setAttribute("data-revealed", "true");
+          if (once) io.unobserve(entry.target);
+        } else if (!once) {
+          entry.target.removeAttribute("data-revealed");
+        }
+      }
+    }, { threshold, rootMargin: margin });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return ref;
+}
+
+/* convenience wrapper — <Reveal>…</Reveal> or <Reveal as="section" delay={80}> */
+function Reveal({ as = "div", delay = 0, className = "", style, children, ...rest }) {
+  const ref = useReveal();
+  const Cmp = as;
   return (
-    <header style={{ marginBottom: 26 }}>
-      {kicker && <div style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent-deep)", marginBottom: 8 }}>{kicker}</div>}
-      <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.15 }}>{title}</h1>
-      {children && <p className="soft" style={{ margin: "10px 0 0", fontSize: 16, maxWidth: 640 }}>{children}</p>}
+    <Cmp ref={ref} className={("reveal " + className).trim()}
+      style={delay ? { transitionDelay: delay + "ms", ...style } : style} {...rest}>
+      {children}
+    </Cmp>
+  );
+}
+
+/* section heading used across tabs — pass hero for the signature lesson entry */
+function PageHead({ kicker, title, children, hero }) {
+  return (
+    <header className={"page-head" + (hero ? " page-head--hero" : "")}>
+      {kicker && <div className="kicker">{kicker}</div>}
+      <h1 className="page-title">{title}</h1>
+      {children && <p className="page-lede">{children}</p>}
     </header>
   );
 }
 
-Object.assign(window, { Icon, Spinner, ProgressBar, Tag, Ring, Empty, PageHead, useState, useEffect, useRef });
+Object.assign(window, { Icon, Spinner, ProgressBar, Tag, Ring, Empty, PageHead, useReveal, Reveal, useState, useEffect, useRef });

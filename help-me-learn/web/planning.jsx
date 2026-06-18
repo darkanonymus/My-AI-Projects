@@ -19,12 +19,12 @@ function ProgressTab({ chapters, onSelect, onToggleMastered, onDelete }) {
   return (
     <div>
       <PageHead kicker="Progression" title="Où tu en es" />
-      <div className="card" style={{ padding: 22, marginBottom: 22, display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="card" style={{ padding: "var(--space-6)", marginBottom: "var(--space-6)", display: "flex", gap: "var(--space-6)", alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ position: "relative", width: 78, height: 78, flex: "none" }}>
           <Ring value={overall} size={78} stroke={7} />
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: 20 }}>{Math.round(overall * 100)}%</div>
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "var(--font-display)", fontWeight: 600, fontSize: "var(--fs-h3)" }}>{Math.round(overall * 100)}%</div>
         </div>
-        <div style={{ display: "flex", gap: 30, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "var(--space-7)", flexWrap: "wrap" }}>
           <Stat n={chapters.length} label="Chapitres" />
           <Stat n={mastered} label="Maîtrisés" />
           <Stat n={chapters.reduce((a, c) => a + (c.cards ? c.cards.length : 0), 0)} label="Flashcards" />
@@ -32,27 +32,27 @@ function ProgressTab({ chapters, onSelect, onToggleMastered, onDelete }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
         {chapters.map(ch => {
           const pct = chapterPct(ch);
           return (
-            <div key={ch.id} className="card" style={{ padding: "16px 18px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div key={ch.id} className="card" style={{ padding: "var(--space-4) var(--space-5)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)", flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 180 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 3 }}>
-                    <h3 style={{ margin: 0, fontSize: 17 }}>{ch.titre || "Chapitre"}</h3>
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>
+                    <h3 style={{ margin: 0, fontSize: "var(--fs-h4)" }}>{ch.titre || "Chapitre"}</h3>
                     {ch.mastered && <Tag variant="good"><PIcon name="check" size={12} /> Maîtrisé</Tag>}
                   </div>
-                  {ch.theme && <p className="soft" style={{ margin: 0, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.theme}</p>}
+                  {ch.theme && <p className="soft" style={{ margin: 0, fontSize: "var(--fs-small)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.theme}</p>}
                 </div>
                 <div style={{ width: 150, flex: "none" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
+                  <div className="meter-head">
                     <span className="muted">Sections</span>
                     <span className="soft" style={{ fontWeight: 600 }}>{ch.sections.filter(s => s.status === "done").length}/{ch.sections.length}</span>
                   </div>
                   <ProgressBar value={pct} />
                 </div>
-                <div style={{ display: "flex", gap: 7, flex: "none" }}>
+                <div style={{ display: "flex", gap: "var(--space-2)", flex: "none" }}>
                   <button className="btn btn-sm" onClick={() => onSelect(ch.id)}>Ouvrir</button>
                   <button className="btn btn-sm" onClick={() => onToggleMastered(ch.id)} title="Marquer comme maîtrisé"
                     style={ch.mastered ? { background: "var(--good-soft)", borderColor: "color-mix(in oklch, var(--good) 35%, transparent)", color: "var(--good)" } : {}}>
@@ -72,8 +72,8 @@ function ProgressTab({ chapters, onSelect, onToggleMastered, onDelete }) {
 function Stat({ n, label }) {
   return (
     <div>
-      <div style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: 26, lineHeight: 1 }}>{n}</div>
-      <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>{label}</div>
+      <div className="stat-n">{n}</div>
+      <div className="stat-label">{label}</div>
     </div>
   );
 }
@@ -96,32 +96,32 @@ function PlanTab({ chapters, planDays }) {
       </PageHead>
 
       {/* phases legend */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 12, marginBottom: 24 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: "var(--space-3)", marginBottom: "var(--space-6)" }}>
         {phases.map((p, i) => (
-          <div key={i} className="card" style={{ padding: "14px 16px", borderLeft: "4px solid " + colorVar(p.couleur) }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-faint)" }}>Jours {p.jours[0]}–{p.jours[1]}</div>
-            <h3 style={{ margin: "3px 0 5px", fontSize: 16 }}>{p.nom}</h3>
-            <p className="soft" style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{p.desc}</p>
+          <div key={i} className="card" style={{ padding: "var(--space-4)", borderLeft: "4px solid " + colorVar(p.couleur) }}>
+            <div style={{ fontSize: "var(--fs-micro)", fontWeight: 600, color: "var(--ink-faint)" }}>Jours {p.jours[0]}–{p.jours[1]}</div>
+            <h3 style={{ margin: "var(--space-1) 0", fontSize: "var(--fs-body-lg)" }}>{p.nom}</h3>
+            <p className="soft" style={{ margin: 0, fontSize: "var(--fs-small)", lineHeight: 1.5 }}>{p.desc}</p>
           </div>
         ))}
       </div>
 
       {/* day grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "var(--space-3)" }}>
         {days.map(d => {
           const accent = colorVar(d.phase.couleur);
           return (
-            <div key={d.jour} className="card" style={{ padding: "11px 12px", minHeight: 96, display: "flex", flexDirection: "column", gap: 7 }}>
+            <div key={d.jour} className="card" style={{ padding: "var(--space-3)", minHeight: 96, display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: 15 }}>Jour {d.jour}</span>
+                <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: "var(--fs-body)" }}>Jour {d.jour}</span>
                 <span style={{ width: 8, height: 8, borderRadius: 99, background: accent }} />
               </div>
-              {d.taches.length === 0 && <span className="muted" style={{ fontSize: 12 }}>{window.ui("planFree")}</span>}
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {d.taches.length === 0 && <span className="muted" style={{ fontSize: "var(--fs-micro)" }}>{window.ui("planFree")}</span>}
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
                 {d.taches.slice(0, 4).map((t, i) => {
                   const st = taskStyle(t.type);
                   return (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, padding: "4px 7px", borderRadius: 7,
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", fontSize: "var(--fs-caption)", padding: "4px 7px", borderRadius: 7,
                       background: st.bg, border: "1px solid " + st.bd, color: st.col, lineHeight: 1.25 }}>
                       <span style={{ flex: "none" }}><PIcon name={st.icon} size={11} /></span>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.label ? st.label + " : " : ""}{t.label}</span>
@@ -134,10 +134,10 @@ function PlanTab({ chapters, planDays }) {
         })}
       </div>
 
-      <div className="card" style={{ marginTop: 22, padding: "16px 18px", display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: "var(--accent-soft)", border: "1px solid var(--accent-line)" }} /> {window.ui("planLegendStudy")}</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: "var(--surface-2)", border: "1px solid var(--line)" }} /> {window.ui("planLegendReview")}</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: "var(--good-soft)", border: "1px solid color-mix(in oklch, var(--good) 35%, transparent)" }} /> {window.ui("planLegendExam")}</span>
+      <div className="card" style={{ marginTop: "var(--space-6)", padding: "var(--space-4) var(--space-5)", display: "flex", gap: "var(--space-5)", flexWrap: "wrap", fontSize: "var(--fs-small)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}><span style={{ width: 12, height: 12, borderRadius: 4, background: "var(--accent-soft)", border: "1px solid var(--accent-line)" }} /> {window.ui("planLegendStudy")}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}><span style={{ width: 12, height: 12, borderRadius: 4, background: "var(--surface-2)", border: "1px solid var(--line)" }} /> {window.ui("planLegendReview")}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}><span style={{ width: 12, height: 12, borderRadius: 4, background: "var(--good-soft)", border: "1px solid color-mix(in oklch, var(--good) 35%, transparent)" }} /> {window.ui("planLegendExam")}</span>
       </div>
     </div>
   );

@@ -59,17 +59,17 @@ function Composer({ onGenerate, generating, compact, aiReady, onOpenSettings }) 
 
   const busy = generating || extracting;
   return (
-    <div className="card" style={{ padding: compact ? 16 : 22, marginBottom: compact ? 20 : 0 }}>
+    <div className="card" style={{ padding: compact ? "var(--space-4)" : "var(--space-5)", marginBottom: compact ? "var(--space-5)" : 0 }}>
       {!aiReady && (
-        <div style={{ marginBottom: 14, padding: "11px 14px", borderRadius: 10, background: "var(--accent-soft)", border: "1px solid var(--accent-line)", fontSize: 13.5, color: "var(--accent-deep)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="notice notice--accent" style={{ marginBottom: "var(--space-4)" }}>
           <span style={{ flex: 1 }}>Choisis un moteur d'IA pour activer la génération.</span>
           <button className="btn btn-sm btn-primary" onClick={onOpenSettings}><LIcon name="spark" size={13} /> Choisir le moteur</button>
         </div>
       )}
       {!compact && (
-        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-4)" }}>
           <Tag variant="accent"><LIcon name="spark" size={13} /> Nouveau chapitre</Tag>
-          <span className="muted" style={{ fontSize: 13 }}>{window.ui("btnImport").replace("Importer ","")} PDF / image</span>
+          <span className="muted" style={{ fontSize: "var(--fs-small)" }}>{window.ui("btnImport").replace("Importer ","")} PDF / image</span>
         </div>
       )}
       <textarea
@@ -78,25 +78,22 @@ function Composer({ onGenerate, generating, compact, aiReady, onOpenSettings }) 
         placeholder={window.ui("composerPlaceholder")}
         rows={compact ? 3 : 6}
         disabled={busy}
-        style={{
-          width: "100%", resize: "vertical", border: "1px solid var(--line)", borderRadius: 11,
-          padding: "13px 15px", fontFamily: "var(--font-sans)", fontSize: 15.5, lineHeight: 1.6,
-          background: "var(--paper)", color: "var(--ink)", outline: "none", minHeight: compact ? 70 : 130,
-        }}
+        className="field"
+        style={{ resize: "vertical", minHeight: compact ? 70 : 130 }}
       />
       {fileName && (
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 9, fontSize: 13, color: "var(--ink-soft)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", marginTop: "var(--space-2)", fontSize: "var(--fs-small)", color: "var(--ink-soft)" }}>
           <LIcon name={/\.pdf$/i.test(fileName) ? "file" : "image"} size={15} />
           <span className="mono">{fileName}</span>
         </div>
       )}
-      {status && <div style={{ marginTop: 10, fontSize: 13.5, color: "var(--accent-deep)", display: "flex", gap: 8, alignItems: "center" }}>{extracting && <Spinner size={14} />}{status}</div>}
+      {status && <div style={{ marginTop: "var(--space-3)", fontSize: "var(--fs-small)", color: "var(--accent-deep)", display: "flex", gap: "var(--space-2)", alignItems: "center" }}>{extracting && <Spinner size={14} />}{status}</div>}
       {warn && (
-        <div style={{ marginTop: 11, padding: "10px 13px", background: "var(--ochre-soft)", border: "1px solid var(--ochre-line)", borderRadius: 9, fontSize: 13.5, color: "var(--ochre-deep)", display: "flex", gap: 9 }}>
+        <div className="notice notice--ochre" style={{ marginTop: "var(--space-3)" }}>
           <span style={{ flex: "none", marginTop: 1 }}><LIcon name="warn" size={15} /></span><span>{warn}</span>
         </div>
       )}
-      <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "var(--space-3)", marginTop: "var(--space-4)", flexWrap: "wrap" }}>
         <button className="btn btn-primary" onClick={submit} disabled={busy || !aiReady || text.trim().length < 8}>
           {generating ? <><Spinner size={15} /> {window.ui("btnGenerating")}</> : <><LIcon name="spark" size={16} /> {window.ui("btnGenerate")}</>}
         </button>
@@ -113,18 +110,18 @@ function Composer({ onGenerate, generating, compact, aiReady, onOpenSettings }) 
 function Glossary({ termes }) {
   if (!termes || !termes.length) return null;
   return (
-    <div className="card" style={{ padding: "16px 18px", marginBottom: 22 }}>
-      <div style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-faint)", marginBottom: 12 }}>
+    <div className="card" style={{ padding: "var(--space-4) var(--space-5)", marginBottom: "var(--space-6)" }}>
+      <div className="field-label" style={{ marginBottom: "var(--space-3)" }}>
         {window.ui("glossaryTitle")}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 11 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "var(--space-3)" }}>
         {termes.map((t, i) => (
-          <div key={i} style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: "var(--radius-sm)", padding: "9px 12px" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
-              <span className="mono" style={{ fontWeight: 600, fontSize: 14, color: "var(--accent-deep)" }}>{t.de}</span>
-              <span style={{ fontSize: 13.5, color: "var(--ink-soft)" }}>→ {t.fr}</span>
+          <div key={i} style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-1)", flexWrap: "wrap" }}>
+              <span className="mono" style={{ fontWeight: 600, fontSize: "var(--fs-small)", color: "var(--accent-deep)" }}>{t.de}</span>
+              <span style={{ fontSize: "var(--fs-small)", color: "var(--ink-soft)" }}>→ {t.fr}</span>
             </div>
-            {t.def && <div className="soft" style={{ fontSize: 13, marginTop: 2, lineHeight: 1.5 }}>{t.def}</div>}
+            {t.def && <div className="soft" style={{ fontSize: "var(--fs-small)", marginTop: 2, lineHeight: 1.5 }}>{t.def}</div>}
           </div>
         ))}
       </div>
@@ -214,6 +211,7 @@ function CollapsedPassage({ hidden, onRestore, children }) {
 
 /* ---------- One lesson section card ---------- */
 function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion, onRestoreHiddenBlock }) {
+  const revealRef = window.useReveal();
   const { n, titre, court, status, contenu, err } = section;
   const insertions = (chapter.insertions || []).filter(ins => ins.sectionN === n);
   const hiddenRanges = (chapter.hiddenBlocks || []).filter(h => h.sectionN === n);
@@ -229,7 +227,7 @@ function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion
     );
   }
   return (
-    <section className="card section-card fade-in" data-status={status} data-section-n={n} style={{ padding: "20px 22px 20px 25px", marginBottom: 14 }} data-screen-label={"Section " + n}>
+    <section ref={revealRef} className="card section-card reveal" data-status={status} data-section-n={n} style={{ padding: "20px 22px 20px 25px", marginBottom: 14 }} data-screen-label={"Section " + n}>
       <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: status === "done" ? 14 : 4 }}>
         <div style={{
           width: 34, height: 34, borderRadius: 9, flex: "none", display: "grid", placeItems: "center",
@@ -471,23 +469,29 @@ function SelectionAssistant({ chapter, onAddInsertion, onAddHiddenBlock, onCheck
 function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock }) {
   const done = chapter.sections.filter(s => s.status === "done").length;
   const total = chapter.sections.length;
+  const [reading, setReading] = window.useState(false);
   return (
     <div>
-      <div style={{ marginBottom: 18 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+      <div className="lesson-head">
+        <div className="lesson-meta">
           {chapter.langueSource && <Tag variant="mono">{chapter.langueSource === "de" ? window.ui("sourceDE") : chapter.langueSource === "fr" ? window.ui("sourceFR") : window.ui("sourceMX")}</Tag>}
           <Tag>{done}/{total} {window.ui("statSections")}</Tag>
           {chapter.fromFile && <Tag variant="mono"><LIcon name="file" size={12} /> {chapter.fromFile}</Tag>}
         </div>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-          <h1 style={{ margin: "0 0 6px", fontSize: 30, lineHeight: 1.12, flex: 1, minWidth: 220 }}>{chapter.titre || "Leçon en préparation…"}</h1>
+        <div className="lesson-title-row">
+          <h1 className="lesson-title">{chapter.titre || "Leçon en préparation…"}</h1>
+          {done > 0 && (
+            <button className="btn btn-sm" onClick={() => setReading(true)} title="Lire la leçon à voix haute" style={{ flex: "none", marginTop: 2 }} disabled={reading}>
+              <LIcon name="speaker" size={15} /> Écouter
+            </button>
+          )}
           {done > 0 && (
             <button className="btn btn-sm" onClick={() => onDownload && onDownload(chapter.id)} title={window.ui("btnDownload")} style={{ flex: "none", marginTop: 2 }}>
               <LIcon name="download" size={15} /> {window.ui("btnDownload")}
             </button>
           )}
         </div>
-        {chapter.theme && <p className="soft" style={{ margin: 0, fontSize: 16.5, maxWidth: 680 }}>{chapter.theme}</p>}
+        {chapter.theme && <p className="lesson-theme">{chapter.theme}</p>}
       </div>
 
       {(chapter.status === "generating" || done < total) && done < total && (
@@ -526,6 +530,8 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
           <p style={{ margin: 0 }}>{chapter.prochaineEtape}</p>
         </Callout>
       )}
+
+      {reading && <window.ReadAloudBar chapter={chapter} lang={window.getLangue()} onClose={() => setReading(false)} />}
     </div>
   );
 }
@@ -535,26 +541,24 @@ function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, o
   if (!current || home) {
     return (
       <div>
-        <PageHead kicker={window.ui("learnKicker")} title={window.ui("learnTitle")}>
+        <PageHead hero kicker={window.ui("learnKicker")} title={window.ui("learnTitle")}>
           {window.ui("learnDesc")}
         </PageHead>
         {aiReady
           ? <Composer onGenerate={onGenerate} generating={generating} aiReady={aiReady} onOpenSettings={onOpenSettings} />
           : <window.AiSetupCard onOpen={onOpenSettings} />}
-        <div style={{ marginTop: 26 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 14 }}>
-            {[
-              { i: "book", t: window.ui("feat1Title"), d: window.ui("feat1Desc") },
-              { i: "warn", t: window.ui("feat2Title"), d: window.ui("feat2Desc") },
-              { i: "target", t: window.ui("feat3Title"), d: window.ui("feat3Desc") },
-            ].map((c, i) => (
-              <div key={i} className="card" style={{ padding: 18 }}>
-                <span style={{ color: "var(--accent)" }}><LIcon name={c.i} size={22} /></span>
-                <h3 style={{ margin: "10px 0 5px", fontSize: 16.5 }}>{c.t}</h3>
-                <p className="soft" style={{ margin: 0, fontSize: 14, lineHeight: 1.55 }}>{c.d}</p>
-              </div>
-            ))}
-          </div>
+        <div className="feature-grid">
+          {[
+            { i: "book", t: window.ui("feat1Title"), d: window.ui("feat1Desc") },
+            { i: "warn", t: window.ui("feat2Title"), d: window.ui("feat2Desc") },
+            { i: "target", t: window.ui("feat3Title"), d: window.ui("feat3Desc") },
+          ].map((c, i) => (
+            <window.Reveal key={i} className="card feature-card" delay={i * 90}>
+              <span className="feature-ico"><LIcon name={c.i} size={22} /></span>
+              <h3>{c.t}</h3>
+              <p>{c.d}</p>
+            </window.Reveal>
+          ))}
         </div>
       </div>
     );

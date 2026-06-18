@@ -127,6 +127,10 @@ function App() {
   const [provider, setProviderState] = uS(window.getProvider());
   const [showSettings, setShowSettings] = uS(false);
   const [showPrefs, setShowPrefs] = uS(false);
+  const [navClosed, setNavClosed] = uS(() => { try { return localStorage.getItem("hml.navClosed") === "1"; } catch (_) { return false; } });
+  function toggleNav() {
+    setNavClosed(v => { const nv = !v; try { localStorage.setItem("hml.navClosed", nv ? "1" : "0"); } catch (_) {} return nv; });
+  }
   const [planEnabled, setPlanEnabledState] = uS(window.getPlanEnabled());
   const [planDays, setPlanDaysState] = uS(window.getPlanDays());
   const [uiLang, setUiLang] = uS(window.getLangue());
@@ -474,7 +478,7 @@ function App() {
   const doneSections = current ? current.sections.filter(s => s.status === "done").length : 0;
 
   return (
-    <div className="shell">
+    <div className="shell" data-nav={navClosed ? "closed" : "open"}>
       {/* ---------- SIDEBAR ---------- */}
       <aside className="sidebar">
         <div className="side-brand">
@@ -483,8 +487,10 @@ function App() {
             <span className="brand-title">Help me Learn</span>
             <span className="brand-sub">IA · KI</span>
           </div>
+          <button className="nav-collapse" onClick={toggleNav} aria-label={window.ui("navCollapse")} title={window.ui("navCollapse")}>
+            <AIcon name="sidebar" size={17} />
+          </button>
         </div>
-        <div className="side-label">{window.ui("navLabel")}</div>
         {TABS.map(t => (
           <button key={t.id} className="nav-item" aria-selected={tab === t.id} onClick={() => { setTab(t.id); if (t.id === "learn" && !current) setHome(true); }}>
             <span className="nav-ico"><AIcon name={t.icon} size={19} /></span>
@@ -515,6 +521,11 @@ function App() {
           </button>
         </div>
       </aside>
+
+      {/* floating button to bring the sidebar back (desktop, only when closed) */}
+      <button className="nav-reopen" onClick={toggleNav} aria-label={window.ui("navExpand")} title={window.ui("navExpand")}>
+        <AIcon name="sidebar" size={18} />
+      </button>
 
       {/* ---------- CONTENT ---------- */}
       <div className="content">
