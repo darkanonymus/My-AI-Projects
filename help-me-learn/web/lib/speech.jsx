@@ -328,10 +328,12 @@ class AudioReader {
     this._token = 0;             // invalidates in-flight plays after stop/skip
     this.audio = new Audio();
     this.audio.preload = "auto";
+    this.volume = 1;             // ducked while hands-free listening so the mic can hear the user
     this.audio.addEventListener("ended", () => this._onEnded());
     this.audio.addEventListener("error", () => this._onEnded());
     this._setupMediaSession();
   }
+  setVolume(v) { this.volume = (v == null ? 1 : v); try { this.audio.volume = this.volume; } catch (_) {} }
   /* interface parity with LessonReader (voice picking is server-side here) */
   setVoice() {}
   setVoices() {}
@@ -440,6 +442,7 @@ class AudioReader {
     if (myToken !== this._token || !this.playing) return;   // stale after stop/skip
     this.audio.src = url;
     this.audio.playbackRate = this.rate;
+    this.audio.volume = this.volume;
     this._updateMeta();
     try { await this.audio.play(); } catch (_) {}
   }
@@ -513,6 +516,7 @@ class AudioReader {
     catch (e) { this.mode = "lesson"; if (onDone) onDone(); return; }
     if (this.mode !== "aside") return;
     this.audio.src = url; this.audio.playbackRate = this.rate;
+    this.audio.volume = 1;   // the spoken answer plays at full volume (reading is paused)
     this.audio.play().catch(() => {});
   }
   stopAside() {
@@ -571,7 +575,7 @@ class WakeWord {
       positiveSpeechThreshold: 0.6,
       minSpeechMs: 250,
       // echo cancellation so the reading voice from the speakers isn't captured
-      getStream: () => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+      getStream: () => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: { ideal: true }, noiseSuppression: { ideal: true }, autoGainControl: { ideal: true }, channelCount: { ideal: 1 } } }),
       onSpeechEnd: (audio) => {
         if (this.paused || !onUtterance) return;
         try {
@@ -719,8 +723,11 @@ function ReadAloudBar({ chapter, lang, onClose }) {
 
   function resumeWake() { if (wakeRef.current) wakeRef.current.resume(); }
 
-  /* a VAD speech segment ended → transcribe; if it begins with the wake word,
-     the rest is the question (or, if just the wake word, record one). */
+  // duck the reading so the mic can hear you over the lesson while hands-free is on
+  useEffect(() => { if (eng && eng.setVolume) eng.setVolume(wakeOn ? 0.45 : 1); }, [wakeOn, eng, serverTTS]); // eslint-disable-line
+
+  /* a VAD speech segment ended → transcribe; if the wake word appears anywhere
+     (tolerant to reading bleeding in), the words after it are the question. */
   async function onUtterance(blob) {
     if (wakeRef.current) wakeRef.current.pause();   // stop capturing while we think/answer
     let text = "";
@@ -729,7 +736,7 @@ function ReadAloudBar({ chapter, lang, onClose }) {
     const w = norm(wakewordRef.current || "lia");
     const words = text.trim().split(/\s+/).filter(Boolean);
     let pos = -1;
-    for (let i = 0; i < Math.min(words.length, 3); i++) { if (w && norm(words[i]).indexOf(w) >= 0) { pos = i; break; } }
+    for (let i = 0; i < words.length; i++) { if (w && norm(words[i]).indexOf(w) >= 0) { pos = i; break; } }
     if (pos < 0) { resumeWake(); return; }                       // not addressed to the assistant
     const remainder = words.slice(pos + 1).join(" ").trim();
     if (eng && status === "playing") eng.pause();
