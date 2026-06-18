@@ -14,6 +14,7 @@ const _UI = {
     tabLearn:"Apprendre", tabLibrary:"Bibliothèque", tabQuiz:"Quiz", tabCards:"Flashcards", tabPlan:"Plan", tabPlanUnit:"j.",
     /* ---- Sidebar ---- */
     navLabel:"Navigation", navCollapse:"Réduire le menu", navExpand:"Ouvrir le menu", btnNewCourse:"Nouveau cours", generating:"Génération en cours…",
+    btnStopGen:"Arrêter", genStopped:"Génération arrêtée.", genStoppedSection:"Arrêté — clique « Réessayer » pour générer cette section.", offlineBanner:"Serveur hors ligne — lance « python server.py » puis recharge.", btnReload:"Recharger", courseDeleted:"Cours supprimé.", btnUndo:"Annuler", raListen:"Écouter", raListenTitle:"Lire la leçon à voix haute", raToc:"Sommaire", raVoice:"Voix", raSpeed:"Vitesse", raOptions:"Options de lecture", raClose:"Fermer", raHint:"Astuce : 🎤 pose une question à voix haute · touche K = lecture/pause", diagBtn:"Diagnostics", diagTitle:"Diagnostics", diagDesc:"Journal de la session : appels au moteur, erreurs et événements. Copie ou exporte-le pour voir où ça a coincé.", diagAll:"Tout", diagErrors:"Erreurs", diagCopy:"Copier", diagCopied:"Copié", diagExport:"Exporter", diagClear:"Vider", diagEmpty:"Aucun événement pour l'instant.",
     engineClaude:"Moteur : Claude", engineGemini:"Moteur : Gemini", engineOllama:"Moteur : Ollama (local)",
     btnPrefs:"Préférences", themeDark:"Mode clair", themeLight:"Mode sombre",
     /* ---- Learn tab ---- */
@@ -98,6 +99,7 @@ const _UI = {
     complementLabel:"＋ Supplement added (outside course)",
     tabLearn:"Learn", tabLibrary:"Library", tabQuiz:"Quiz", tabCards:"Flashcards", tabPlan:"Plan", tabPlanUnit:"d.",
     navLabel:"Navigation", navCollapse:"Collapse menu", navExpand:"Open menu", btnNewCourse:"New course", generating:"Generating…",
+    btnStopGen:"Stop", genStopped:"Generation stopped.", genStoppedSection:"Stopped — click “Retry” to generate this section.", offlineBanner:"Server offline — run “python server.py”, then reload.", btnReload:"Reload", courseDeleted:"Course deleted.", btnUndo:"Undo", raListen:"Listen", raListenTitle:"Read the lesson aloud", raToc:"Contents", raVoice:"Voice", raSpeed:"Speed", raOptions:"Playback options", raClose:"Close", raHint:"Tip: 🎤 ask a question by voice · press K = play/pause", diagBtn:"Diagnostics", diagTitle:"Diagnostics", diagDesc:"Session log: engine calls, errors and events. Copy or export it to see where it broke.", diagAll:"All", diagErrors:"Errors", diagCopy:"Copy", diagCopied:"Copied", diagExport:"Export", diagClear:"Clear", diagEmpty:"No events yet.",
     engineClaude:"Engine: Claude", engineGemini:"Engine: Gemini", engineOllama:"Engine: Ollama (local)",
     btnPrefs:"Preferences", themeDark:"Light mode", themeLight:"Dark mode",
     learnKicker:"Learn", learnTitle:"Turn your course into a clear lesson",
@@ -173,6 +175,7 @@ const _UI = {
     complementLabel:"＋ Ergänzung hinzugefügt (außerhalb des Kurses)",
     tabLearn:"Lernen", tabLibrary:"Bibliothek", tabQuiz:"Quiz", tabCards:"Lernkarten", tabPlan:"Plan", tabPlanUnit:"T.",
     navLabel:"Navigation", navCollapse:"Menü einklappen", navExpand:"Menü öffnen", btnNewCourse:"Neuer Kurs", generating:"Wird generiert…",
+    btnStopGen:"Stopp", genStopped:"Generierung gestoppt.", genStoppedSection:"Gestoppt — klicke „Erneut versuchen“, um diesen Abschnitt zu erzeugen.", offlineBanner:"Server offline — starte „python server.py“ und lade neu.", btnReload:"Neu laden", courseDeleted:"Kurs gelöscht.", btnUndo:"Rückgängig", raListen:"Anhören", raListenTitle:"Lektion vorlesen", raToc:"Inhalt", raVoice:"Stimme", raSpeed:"Tempo", raOptions:"Wiedergabeoptionen", raClose:"Schließen", raHint:"Tipp: 🎤 stelle eine Frage per Stimme · Taste K = Wiedergabe/Pause", diagBtn:"Diagnose", diagTitle:"Diagnose", diagDesc:"Sitzungsprotokoll: Engine-Aufrufe, Fehler und Ereignisse. Kopiere oder exportiere es, um zu sehen, wo es hakte.", diagAll:"Alle", diagErrors:"Fehler", diagCopy:"Kopieren", diagCopied:"Kopiert", diagExport:"Exportieren", diagClear:"Leeren", diagEmpty:"Noch keine Ereignisse.",
     engineClaude:"Engine: Claude", engineGemini:"Engine: Gemini", engineOllama:"Engine: Ollama (lokal)",
     btnPrefs:"Einstellungen", themeDark:"Helles Design", themeLight:"Dunkles Design",
     learnKicker:"Lernen", learnTitle:"Verwandle deinen Kurs in eine klare Lektion",

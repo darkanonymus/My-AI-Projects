@@ -41,6 +41,9 @@ function Icon({ name, size = 18 }) {
     play:    <path d="M7 5l12 7-12 7z"/>,
     pause:   <><path d="M9 5v14"/><path d="M15 5v14"/></>,
     speaker: <><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></>,
+    mic:     <><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></>,
+    chevrondown: <path d="M6 9l6 6 6-6"/>,
+    openbook: <><path d="M12 6.6C10.4 5.2 7.2 4.6 4 5.1v13.2c3.2-.5 6.4.1 8 1.5 1.6-1.4 4.8-2 8-1.5V5.1c-3.2-.5-6.4.1-8 1.5z"/><path d="M12 6.6V20.3"/></>,
   };
   return <svg {...p}>{paths[name] || null}</svg>;
 }

@@ -167,14 +167,13 @@ button { font-family: inherit; cursor: pointer; }
 }
 .side-brand { display: flex; align-items: center; gap: 12px; padding: 6px 8px 16px; }
 .brand-mark {
-  width: 42px; height: 42px; border-radius: 12px; flex: none;
-  background: var(--grad-accent); color: #fff;
-  display: grid; place-items: center; font-family: var(--font-serif); font-weight: 700; font-size: 21px;
-  box-shadow: var(--glow-accent);
+  width: 42px; height: 42px; border-radius: 13px; flex: none;
+  background: var(--ochre-soft); color: var(--ochre-deep); border: 1px solid var(--ochre-line);
+  display: grid; place-items: center;
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.12; }
 .brand-title { font-family: var(--font-serif); font-weight: 600; font-size: 18px; letter-spacing: -0.01em; }
-.brand-sub { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 3px; }
+.brand-sub { font-family: var(--font-display); font-style: italic; font-size: 12px; color: var(--ink-faint); letter-spacing: 0; margin-top: 3px; }
 
 .side-label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); padding: 6px 12px 4px; }
 
@@ -621,7 +620,19 @@ button { font-family: inherit; cursor: pointer; }
   padding: 9px 11px; border-radius: 18px;
   background: color-mix(in oklch, var(--surface) 86%, transparent); backdrop-filter: blur(16px);
   border: 1px solid var(--line-strong); box-shadow: var(--shadow-lg);
+  transition: transform 0.32s var(--ease-out), opacity 0.25s var(--ease-out);
+  animation: barIn 0.28s var(--ease-out);
 }
+@keyframes barIn { from { opacity: 0; } to { opacity: 1; } }
+.read-bar[data-collapsed="true"] { transform: translate(-50%, 170%); opacity: 0; pointer-events: none; }
+.read-fab {
+  position: fixed; right: 20px; bottom: 22px; z-index: 70; width: 48px; height: 48px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; border: none;
+  background: var(--grad-accent); color: #fff; box-shadow: var(--glow-accent);
+  transition: filter 0.16s var(--ease-out), transform 0.16s var(--ease-out);
+}
+.read-fab:hover { filter: brightness(1.06); transform: translateY(-2px); }
+@media (max-width: 880px) { .read-fab { bottom: calc(82px + env(safe-area-inset-bottom)); right: 14px; } }
 @media (max-width: 880px) { .read-bar { bottom: calc(74px + env(safe-area-inset-bottom)); width: calc(100vw - 20px); } }
 .read-play {
   flex: none; width: 42px; height: 42px; border-radius: 12px; border: none;
@@ -651,6 +662,54 @@ button { font-family: inherit; cursor: pointer; }
 .read-toc button:hover { background: var(--surface-2); color: var(--ink); }
 .read-toc button[data-cur="true"] { background: var(--accent-soft); color: var(--accent-deep); }
 @media (max-width: 880px) { .read-voice { max-width: 92px; } .read-rate { min-width: 40px; } }
+
+/* voice Q&A (Phase A) */
+.read-mic[data-on="true"] { background: var(--bad-soft); border-color: color-mix(in oklch, var(--bad) 45%, transparent); color: var(--bad); }
+.read-follow { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
+.read-more {
+  position: absolute; bottom: calc(100% + 10px); right: 0; min-width: 230px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px;
+  box-shadow: var(--shadow-lg); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3);
+}
+.read-more-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.read-more-label { font-size: var(--fs-small); color: var(--ink-soft); flex: none; }
+.read-hint {
+  position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: var(--space-2); max-width: min(460px, 92vw);
+  padding: 7px 7px 7px 14px; border-radius: 999px; font-size: var(--fs-small);
+  background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent-deep); box-shadow: var(--shadow-md);
+}
+.read-ask {
+  position: absolute; bottom: calc(100% + 10px); left: 0; right: 0;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 14px;
+  box-shadow: var(--shadow-lg); padding: var(--space-3) var(--space-4);
+}
+.read-ask-row { display: flex; align-items: center; gap: var(--space-3); }
+.read-ask-live { flex: 1; min-width: 0; font-size: var(--fs-small); color: var(--ink-soft); }
+.read-ask-pulse { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 99px; background: var(--bad-soft); color: var(--bad); animation: pulse-glow 1.3s ease-in-out infinite; }
+.read-ask-scroll { max-height: min(48vh, 380px); overflow-y: auto; }
+.read-ask-q { font-size: var(--fs-small); color: var(--ink-soft); font-style: italic; margin-bottom: var(--space-2); }
+.read-ask-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--surface); }
+
+/* ============ DIAGNOSTICS LOG ============ */
+.diag-log { border: 1px solid var(--line); border-radius: 12px; max-height: 52vh; overflow-y: auto; background: var(--paper); }
+.diag-row { display: grid; grid-template-columns: auto auto 1fr; gap: var(--space-3); align-items: baseline; padding: 7px 12px; border-bottom: 1px solid var(--line); font-size: var(--fs-micro); }
+.diag-row:last-child { border-bottom: none; }
+.diag-row[data-level="error"] { background: var(--bad-soft); }
+.diag-row[data-level="warn"] { background: var(--ochre-soft); }
+.diag-time { color: var(--ink-faint); font-size: var(--fs-caption); white-space: nowrap; }
+.diag-ev { color: var(--ink); font-weight: 600; white-space: nowrap; }
+.diag-row[data-level="error"] .diag-ev { color: var(--bad); }
+.diag-row[data-level="warn"] .diag-ev { color: var(--ochre-deep); }
+.diag-detail { color: var(--ink-soft); word-break: break-word; }
+
+/* offline banner (proactive backend-down warning) */
+.offline-banner {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-5); background: var(--bad-soft);
+  border-bottom: 1px solid color-mix(in oklch, var(--bad) 35%, transparent);
+  color: var(--bad); font-size: var(--fs-small); position: sticky; top: 0; z-index: 45;
+}
 </style>
 </head>
 <body>
@@ -669,6 +728,7 @@ button { font-family: inherit; cursor: pointer; }
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
+<script type="text/babel" src="lib/diagnostics.jsx"></script>
 <script type="text/babel" src="i18n.jsx"></script>
 <!-- lib/ — logic core, split by concern (was one 1300-line lib.jsx) -->
 <script type="text/babel" src="lib/prefs.jsx"></script>

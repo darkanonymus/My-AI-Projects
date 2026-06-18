@@ -211,7 +211,6 @@ function CollapsedPassage({ hidden, onRestore, children }) {
 
 /* ---------- One lesson section card ---------- */
 function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion, onRestoreHiddenBlock }) {
-  const revealRef = window.useReveal();
   const { n, titre, court, status, contenu, err } = section;
   const insertions = (chapter.insertions || []).filter(ins => ins.sectionN === n);
   const hiddenRanges = (chapter.hiddenBlocks || []).filter(h => h.sectionN === n);
@@ -227,7 +226,7 @@ function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion
     );
   }
   return (
-    <section ref={revealRef} className="card section-card reveal" data-status={status} data-section-n={n} style={{ padding: "20px 22px 20px 25px", marginBottom: 14 }} data-screen-label={"Section " + n}>
+    <section className="card section-card fade-in" data-status={status} data-section-n={n} style={{ padding: "20px 22px 20px 25px", marginBottom: 14 }} data-screen-label={"Section " + n}>
       <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: status === "done" ? 14 : 4 }}>
         <div style={{
           width: 34, height: 34, borderRadius: 9, flex: "none", display: "grid", placeItems: "center",
@@ -481,8 +480,8 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
         <div className="lesson-title-row">
           <h1 className="lesson-title">{chapter.titre || "Leçon en préparation…"}</h1>
           {done > 0 && (
-            <button className="btn btn-sm" onClick={() => setReading(true)} title="Lire la leçon à voix haute" style={{ flex: "none", marginTop: 2 }} disabled={reading}>
-              <LIcon name="speaker" size={15} /> Écouter
+            <button className="btn btn-sm" onClick={() => setReading(true)} title={window.ui("raListenTitle")} style={{ flex: "none", marginTop: 2 }} disabled={reading}>
+              <LIcon name="speaker" size={15} /> {window.ui("raListen")}
             </button>
           )}
           {done > 0 && (

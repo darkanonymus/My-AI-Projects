@@ -42,10 +42,10 @@ function GenTimeline({ chapter }) {
 }
 
 /* Run async task functions with at most `limit` concurrent promises */
-async function runConcurrent(tasks, limit) {
+async function runConcurrent(tasks, limit, shouldStop) {
   const queue = [...tasks];
   async function worker() {
-    while (queue.length) { const t = queue.shift(); if (t) await t(); }
+    while (queue.length) { if (shouldStop && shouldStop()) break; const t = queue.shift(); if (t) await t(); }
   }
   await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
 }
@@ -130,6 +130,39 @@ function App() {
   const [navClosed, setNavClosed] = uS(() => { try { return localStorage.getItem("hml.navClosed") === "1"; } catch (_) { return false; } });
   function toggleNav() {
     setNavClosed(v => { const nv = !v; try { localStorage.setItem("hml.navClosed", nv ? "1" : "0"); } catch (_) {} return nv; });
+  }
+  const [showDiag, setShowDiag] = uS(false);
+  const [diagErrors, setDiagErrors] = uS(0);
+  uE(() => {
+    if (!window.HMLog) return;
+    const upd = () => setDiagErrors(window.HMLog.errorCount());
+    upd();
+    return window.HMLog.subscribe(upd);
+  }, []);
+
+  // proactive backend-online detection (Nielsen #1/#5): warn BEFORE the user hits a failed action
+  const [serverOnline, setServerOnline] = uS(true);
+  uE(() => {
+    let alive = true;
+    async function check() {
+      try { const r = await fetch("/api/health", { method: "GET" }); if (alive) setServerOnline(!!(r && r.ok)); }
+      catch (_) { if (alive) setServerOnline(false); }
+    }
+    check();
+    const t = setInterval(check, 20000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  // cancel an in-flight generation (Nielsen #3)
+  const cancelRef = uR(false);
+  function stopGeneration() { cancelRef.current = true; flash(window.ui("genStopped")); }
+
+  // undo course deletion (Nielsen #3)
+  const [undo, setUndo] = uS(null);
+  const undoTimer = uR(null);
+  function undoDelete() {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setUndo(u => { if (u && u.ch) setChapters(prev => prev.some(c => c.id === u.ch.id) ? prev : [...prev, u.ch]); return null; });
   }
   const [planEnabled, setPlanEnabledState] = uS(window.getPlanEnabled());
   const [planDays, setPlanDaysState] = uS(window.getPlanDays());
@@ -320,6 +353,7 @@ function App() {
     setHome(false);
     setTab("learn");
     setGenerating(true);
+    cancelRef.current = false;
     const id = ch.id;
 
     try {
@@ -373,7 +407,17 @@ function App() {
     tasks.push(() => genCards(id));
 
     // 3 concurrent requests — safe within OpenRouter's 15 req/min free tier
-    await runConcurrent(tasks, 3);
+    await runConcurrent(tasks, 3, () => cancelRef.current);
+    if (cancelRef.current) {
+      // user stopped: anything still "loading" without content becomes a retry-able stopped state
+      setChapters(prev => prev.map(c => c.id !== id ? c : {
+        ...c, status: "done",
+        sections: c.sections.map(s => (s.status === "loading" && !(s.contenu && s.contenu.length > 2))
+          ? { ...s, status: "error", err: window.ui("genStoppedSection") } : s),
+      }));
+      setGenerating(false);
+      return;
+    }
     try {
       const raw = await window.callClaude(window.buildClosingPrompt(withTermes()));
       const data = window.parseJSON(raw) || {};
@@ -420,6 +464,7 @@ function App() {
     const cap = Math.min(list.length, 12);
     let acc = "";
     for (let i = 0; i < cap; i++) {
+      if (cancelRef.current) break;
       const ex = list[i];
       try {
         const txt = await window.callClaude(window.buildSingleExercisePrompt(ch, ex, prior, i + 1, cap));
@@ -450,11 +495,17 @@ function App() {
   async function retryCards(id) { if (generating) return; setGenerating(true); await genCards(id); setGenerating(false); }
 
   function deleteChapter(id) {
+    const ch = chaptersRef.current.find(c => c.id === id);
     setChapters(prev => {
       const next = prev.filter(c => c.id !== id);
       if (currentId === id) setCurrentId(next.length ? next[next.length - 1].id : null);
       return next;
     });
+    if (ch) {
+      setUndo({ ch });
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+      undoTimer.current = setTimeout(() => setUndo(null), 6000);
+    }
   }
   function toggleMastered(id) { patchChapter(id, c => ({ mastered: !c.mastered })); }
 
@@ -482,10 +533,10 @@ function App() {
       {/* ---------- SIDEBAR ---------- */}
       <aside className="sidebar">
         <div className="side-brand">
-          <div className="brand-mark">L</div>
+          <div className="brand-mark"><AIcon name="openbook" size={24} /></div>
           <div className="brand-text">
             <span className="brand-title">Help me Learn</span>
-            <span className="brand-sub">IA · KI</span>
+            <span className="brand-sub">comprendre, pas mémoriser</span>
           </div>
           <button className="nav-collapse" onClick={toggleNav} aria-label={window.ui("navCollapse")} title={window.ui("navCollapse")}>
             <AIcon name="sidebar" size={17} />
@@ -507,6 +558,12 @@ function App() {
             ? <GenTimeline chapter={current} />
             : <div className="gen-chip"><Spinner size={14} /> {window.ui("generating")}</div>
           )}
+          {generating && (
+            <button className="btn btn-sm" onClick={stopGeneration}
+              style={{ justifyContent: "center", color: "var(--bad)", borderColor: "color-mix(in oklch, var(--bad) 35%, transparent)", background: "var(--bad-soft)" }}>
+              <AIcon name="x" size={13} /> {window.ui("btnStopGen")}
+            </button>
+          )}
           <button className="theme-btn" onClick={() => setShowSettings(true)} title="Choisir le moteur d'IA">
             <span style={{ width: 9, height: 9, borderRadius: 99, flex: "none", background: provider === "claude" ? "var(--accent)" : "var(--good)" }} />
             {provider === "claude" ? window.ui("engineClaude") : provider === "gemini" ? window.ui("engineGemini") : window.ui("engineOllama")}
@@ -514,6 +571,11 @@ function App() {
           <button className="theme-btn" onClick={() => setShowPrefs(true)} title={window.ui("prefsTitle")}>
             <AIcon name="target" size={15} />
             {window.ui("btnPrefs")}
+          </button>
+          <button className="theme-btn" onClick={() => setShowDiag(true)} title={window.ui("diagBtn")}>
+            <AIcon name="warn" size={15} />
+            {window.ui("diagBtn")}
+            {diagErrors > 0 && <span className="nav-badge" style={{ marginLeft: "auto", background: "var(--bad)", color: "#fff" }}>{diagErrors}</span>}
           </button>
           <button className="theme-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
             <AIcon name={theme === "dark" ? "sun" : "moon"} size={16} />
@@ -530,7 +592,7 @@ function App() {
       {/* ---------- CONTENT ---------- */}
       <div className="content">
         <div className="mobile-top">
-          <div className="brand-mark" style={{ width: 34, height: 34, fontSize: 17 }}>L</div>
+          <div className="brand-mark" style={{ width: 34, height: 34 }}><AIcon name="openbook" size={19} /></div>
           <div className="brand-text">
             <span className="brand-title" style={{ fontSize: 16 }}>Help me Learn</span>
           </div>
@@ -542,6 +604,13 @@ function App() {
             <AIcon name={theme === "dark" ? "sun" : "moon"} size={17} />
           </button>
         </div>
+        {!serverOnline && (
+          <div className="offline-banner">
+            <AIcon name="warn" size={16} />
+            <span style={{ flex: 1 }}>{window.ui("offlineBanner")}</span>
+            <button className="btn btn-sm" onClick={() => window.location.reload()}>{window.ui("btnReload")}</button>
+          </div>
+        )}
         <main className="content-inner">
           {tab === "learn" && <LearnTab chapters={chapters} current={current} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} />}
           {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} />}
@@ -557,12 +626,25 @@ function App() {
       {/* ---------- PREFS MODAL ---------- */}
       <PrefsModal open={showPrefs} onClose={closePrefs} />
 
+      {/* ---------- DIAGNOSTICS MODAL ---------- */}
+      <window.DiagnosticsModal open={showDiag} onClose={() => setShowDiag(false)} />
+
       {/* ---------- TOAST ---------- */}
       {toast && (
         <div className="fade-in" style={{ position: "fixed", bottom: 26, left: "50%", transform: "translateX(-50%)", zIndex: 100,
           background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "var(--shadow-lg)",
           borderRadius: 12, padding: "12px 18px", fontSize: 14.5, display: "flex", alignItems: "center", gap: 10, maxWidth: "90vw" }}>
           <span style={{ color: "var(--good)" }}><AIcon name="check" size={17} /></span>{toast}
+        </div>
+      )}
+
+      {/* ---------- UNDO DELETE ---------- */}
+      {undo && undo.ch && (
+        <div className="fade-in" style={{ position: "fixed", bottom: 26, left: "50%", transform: "translateX(-50%)", zIndex: 101,
+          background: "var(--surface)", border: "1px solid var(--line-strong)", boxShadow: "var(--shadow-lg)",
+          borderRadius: 12, padding: "10px 12px 10px 16px", fontSize: 14.5, display: "flex", alignItems: "center", gap: 12, maxWidth: "90vw" }}>
+          <span>{window.ui("courseDeleted")}</span>
+          <button className="btn btn-sm" onClick={undoDelete}><AIcon name="flip" size={13} /> {window.ui("btnUndo")}</button>
         </div>
       )}
     </div>
