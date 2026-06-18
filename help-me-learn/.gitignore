@@ -9,6 +9,10 @@ __pycache__/
 # Local data — personal generated courses, not project source
 data.db
 
+# TTS — downloaded voice models (~60 MB each) + synthesized audio cache
+voices/
+.tts_cache/
+
 # Editor/agent local state
 .claude/settings.local.json
 .agents/

@@ -12,3 +12,8 @@ pdf_oxide>=0.3.42            # text / markdown (the extractor you asked for)
 pypdfium2>=4.30              # page rendering + image bboxes + char boxes
 numpy>=1.24                  # vector-figure layout analysis
 Pillow>=10.0                 # crop + JPEG encode
+
+# Background audio (server-side TTS) — optional but enables YouTube-style
+# background listening. Without it the app falls back to browser Web Speech.
+# After install, fetch a voice: python scripts/download_voices.py
+piper-tts>=1.2               # offline neural TTS (https://github.com/rhasspy/piper)

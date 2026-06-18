@@ -306,6 +306,228 @@ class LessonReader {
   }
 }
 
+/* ---- server-side TTS engine (Piper) → background audio ----
+   Mirrors LessonReader's public interface so ReadAloudBar can swap engines
+   without code changes. The crucial difference: it feeds real audio bytes into
+   a single reused <audio> element, which KEEPS PLAYING when the tab is
+   backgrounded or the screen is locked (Web Speech can't). Adds MediaSession
+   so the OS lock-screen / headset controls drive playback. Clips are fetched
+   per sentence from /api/tts and prefetched one ahead for gapless reading;
+   the server caches them so re-reads are instant. */
+class AudioReader {
+  constructor(onState) {
+    this.onState = onState;
+    this.queue = []; this.idx = 0; this.playing = false;
+    this.lastNode = null; this.rate = 1; this.mainLang = "fr";
+    this.germanMatcher = null; this.root = ".content-inner";
+    this.chapterTitle = ""; this.mode = "lesson";   // "lesson" | "aside"
+    this.follow = true; this._scrollBound = false;
+    this._scrollHandler = () => { if (this.follow) { this.follow = false; this.onState({ follow: false }); } };
+    this._urls = new Map();      // key "lang|text" -> Promise<objectURL> (dedup + prefetch)
+    this._order = [];            // insertion order for LRU revocation
+    this._token = 0;             // invalidates in-flight plays after stop/skip
+    this.audio = new Audio();
+    this.audio.preload = "auto";
+    this.audio.addEventListener("ended", () => this._onEnded());
+    this.audio.addEventListener("error", () => this._onEnded());
+    this._setupMediaSession();
+  }
+  /* interface parity with LessonReader (voice picking is server-side here) */
+  setVoice() {}
+  setVoices() {}
+  setLang() {}
+  setRate(r) { this.rate = r || 1; try { this.audio.playbackRate = this.rate; } catch (_) {} }
+  setMainLang(c) { this.mainLang = c || "fr"; }
+  setGermanTerms(terms) { try { this.germanMatcher = buildGermanMatcher(terms); } catch (_) { this.germanMatcher = null; } }
+  setChapterTitle(t) { this.chapterTitle = t || ""; }
+
+  _setupMediaSession() {
+    if (!("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.setActionHandler("play", () => this.resume());
+      ms.setActionHandler("pause", () => this.pause());
+      ms.setActionHandler("previoustrack", () => this.skipSection(-1));
+      ms.setActionHandler("nexttrack", () => this.skipSection(1));
+      ms.setActionHandler("seekforward", () => this._step(1));
+      ms.setActionHandler("seekbackward", () => this._step(-1));
+    } catch (_) {}
+  }
+  _updateMeta() {
+    if (!("mediaSession" in navigator)) return;
+    try {
+      const it = this.queue[this.idx];
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: this.chapterTitle || "Help me Learn",
+        artist: (it && it.text) ? it.text.slice(0, 80) : "",
+        album: it ? ("Section " + it.sectionN) : "",
+      });
+      navigator.mediaSession.playbackState = this.playing ? "playing" : "paused";
+    } catch (_) {}
+  }
+
+  _bindScroll() {
+    if (this._scrollBound) return;
+    ["wheel", "touchmove", "keydown"].forEach(ev => window.addEventListener(ev, this._scrollHandler, { passive: true }));
+    this._scrollBound = true;
+  }
+  _unbindScroll() {
+    if (!this._scrollBound) return;
+    ["wheel", "touchmove", "keydown"].forEach(ev => window.removeEventListener(ev, this._scrollHandler));
+    this._scrollBound = false;
+  }
+  _clear() {
+    if (this.lastNode) this.lastNode.classList.remove("reading-now");
+    this.lastNode = null;
+    document.querySelectorAll(".reading-section").forEach(el => el.classList.remove("reading-section"));
+  }
+  _highlight(node) {
+    if (this.lastNode === node) return;
+    if (this.lastNode) this.lastNode.classList.remove("reading-now");
+    node.classList.add("reading-now");
+    this.lastNode = node;
+    document.querySelectorAll(".reading-section").forEach(el => el.classList.remove("reading-section"));
+    const card = node.closest(".section-card");
+    if (card) card.classList.add("reading-section");
+    if (this.follow) {
+      const r = node.getBoundingClientRect();
+      if (r.top < 90 || r.bottom > window.innerHeight - 140) node.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }
+  enableFollow() {
+    this.follow = true; this.onState({ follow: true });
+    if (this.lastNode) this.lastNode.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  /* fetch (and cache) a clip's object URL — promises are cached so a prefetch
+     and the real play share one request; resolved URLs are LRU-revoked. */
+  _clipURL(text, lang) {
+    const key = (lang || this.mainLang) + "|" + text;
+    if (this._urls.has(key)) return this._urls.get(key);
+    const p = fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, lang: lang || this.mainLang }),
+    }).then(async r => {
+      if (!r.ok) throw new Error("TTS " + r.status);
+      return URL.createObjectURL(await r.blob());
+    });
+    this._urls.set(key, p);
+    this._order.push(key);
+    while (this._order.length > 12) {
+      const old = this._order.shift();
+      const pr = this._urls.get(old);
+      this._urls.delete(old);
+      if (pr) pr.then(u => { try { URL.revokeObjectURL(u); } catch (_) {} }).catch(() => {});
+    }
+    return p;
+  }
+  _prefetch(i) {
+    const it = this.queue[i];
+    if (it && it.text) this._clipURL(it.text, it.lang).catch(() => {});
+  }
+  async _playCurrent() {
+    if (!this.playing || this.mode !== "lesson") return;
+    if (this.idx >= this.queue.length) { this.stop(); return; }
+    const myToken = this._token;
+    const item = this.queue[this.idx];
+    if (item.node && document.contains(item.node)) this._highlight(item.node);
+    this.onState({ caption: item.text, section: item.sectionN });
+    this._prefetch(this.idx + 1);
+    let url;
+    try { url = await this._clipURL(item.text, item.lang); }
+    catch (e) { if (myToken === this._token && this.playing) { this.idx++; this._playCurrent(); } return; }
+    if (myToken !== this._token || !this.playing) return;   // stale after stop/skip
+    this.audio.src = url;
+    this.audio.playbackRate = this.rate;
+    this._updateMeta();
+    try { await this.audio.play(); } catch (_) {}
+  }
+  _onEnded() {
+    if (!this.playing) return;
+    if (this.mode === "aside") { this.mode = "lesson"; if (this._asideDone) { const d = this._asideDone; this._asideDone = null; d(); } return; }
+    this.idx++; this._playCurrent();
+  }
+  _step(dir) {   // small seek = jump one sentence (lock-screen seek buttons)
+    if (!this.queue.length) return;
+    this._token++;
+    this.idx = Math.max(0, Math.min(this.queue.length - 1, this.idx + dir));
+    this.playing = true; this.mode = "lesson"; this._playCurrent();
+  }
+
+  start(sectionN) {
+    this._token++;
+    this.queue = buildQueue(this.root, { matcher: this.germanMatcher, mainLang: this.mainLang });
+    let start = 0;
+    if (sectionN != null) {
+      const fi = this.queue.findIndex(it => String(it.sectionN) === String(sectionN));
+      if (fi >= 0) start = fi;
+    }
+    this.idx = start; this.playing = true; this.follow = true; this.mode = "lesson";
+    this._bindScroll();
+    this.onState({ status: "playing", follow: true });
+    this._playCurrent();
+  }
+  resume() {
+    this.playing = true; this.mode = "lesson"; this._bindScroll();
+    this.onState({ status: "playing" });
+    if (this.audio.src && this.audio.paused && this.audio.currentTime > 0 && !this.audio.ended) {
+      this.audio.play().catch(() => {});
+    } else { this._playCurrent(); }
+    this._updateMeta();
+  }
+  pause() {
+    this.playing = false;
+    try { this.audio.pause(); } catch (_) {}
+    this.onState({ status: "paused" });
+    this._updateMeta();
+  }
+  stop() {
+    this.playing = false; this._token++; this.mode = "lesson";
+    this._unbindScroll();
+    try { this.audio.pause(); this.audio.removeAttribute("src"); this.audio.load(); } catch (_) {}
+    this._clear();
+    if ("mediaSession" in navigator) { try { navigator.mediaSession.playbackState = "none"; } catch (_) {} }
+    this.onState({ status: "idle", caption: "", section: null });
+  }
+  restartCurrent() { if (this.playing && this.mode === "lesson") { this._token++; this._playCurrent(); } }
+  skipSection(dir) {
+    if (!this.queue.length) this.queue = buildQueue(this.root, { matcher: this.germanMatcher, mainLang: this.mainLang });
+    const sections = [...new Set(this.queue.map(it => String(it.sectionN)))];
+    const cur = this.queue[this.idx] ? String(this.queue[this.idx].sectionN) : sections[0];
+    let pos = sections.indexOf(cur); if (pos < 0) pos = 0;
+    const target = sections[Math.max(0, Math.min(sections.length - 1, pos + dir))];
+    const fi = this.queue.findIndex(it => String(it.sectionN) === target);
+    this._token++;
+    this.idx = fi >= 0 ? fi : 0; this.playing = true; this.mode = "lesson";
+    this.onState({ status: "playing" });
+    this._playCurrent();
+  }
+  /* one-off spoken answer (voice Q&A), then resume the lesson */
+  async speakAside(text, onDone) {
+    this._token++;
+    this.mode = "aside"; this.playing = true; this._asideDone = onDone || null;
+    const clean = plainForSpeech(text);
+    let url;
+    try { url = await this._clipURL(clean, this.mainLang); }
+    catch (e) { this.mode = "lesson"; if (onDone) onDone(); return; }
+    if (this.mode !== "aside") return;
+    this.audio.src = url; this.audio.playbackRate = this.rate;
+    this.audio.play().catch(() => {});
+  }
+  stopAside() {
+    this._asideDone = null;
+    if (this.mode === "aside") { this.mode = "lesson"; try { this.audio.pause(); } catch (_) {} }
+  }
+  resumeFromCurrent() {
+    this._token++; this.mode = "lesson"; this.playing = true; this.follow = true;
+    this._bindScroll();
+    this.onState({ status: "playing", follow: true });
+    if (!this.queue.length) { this.start(null); return; }
+    this._playCurrent();
+  }
+}
+
 function ReadAloudBar({ chapter, lang, onClose }) {
   const voices = useVoices();
   const bcp47 = LANG_BCP47[lang] || "fr-FR";
@@ -322,15 +544,24 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   const [showHint, setShowHint] = useState(() => { try { return localStorage.getItem("hml.ttsHintSeen") !== "1"; } catch (_) { return true; } });
   const engineRef = useRef(null);
   const recRef = useRef(null);
+  const [serverTTS, setServerTTS] = useState(null);   // null = detecting, then true/false
 
-  if (!engineRef.current && speechSupported()) {
-    engineRef.current = new LessonReader((p) => {
-      if (p.status !== undefined) setStatus(p.status);
-      if (p.follow !== undefined) setFollow(p.follow);
-      if (p.caption !== undefined) setCaption(p.caption);
-      if (p.section !== undefined) setCurSection(p.section);
-    });
-  }
+  /* detect server-side TTS (Piper). If present we use AudioReader (real audio,
+     plays in the background + lock-screen controls); otherwise Web Speech. */
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/health").then(r => r.json())
+      .then(h => { if (alive) setServerTTS(!!(h && h.tts && h.tts.available)); })
+      .catch(() => { if (alive) setServerTTS(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const onState = useRef((p) => {
+    if (p.status !== undefined) setStatus(p.status);
+    if (p.follow !== undefined) setFollow(p.follow);
+    if (p.caption !== undefined) setCaption(p.caption);
+    if (p.section !== undefined) setCurSection(p.section);
+  }).current;
   const eng = engineRef.current;
 
   const voice = voices.find(v => v.voiceURI === voiceURI) || pickDefaultVoice(voices, bcp47);
@@ -346,18 +577,25 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   }, [eng, voice, voices, rate, bcp47, lang, chapter]);
   useEffect(() => { if (!voiceURI && voices.length) { const v = pickDefaultVoice(voices, bcp47); if (v) setVoiceURI(v.voiceURI); } }, [voices, bcp47, voiceURI]);
 
-  /* auto-start on mount; always cancel speech + recognition on unmount */
+  /* once TTS support is known, build the right engine, configure it, auto-start.
+     Always cancel speech + recognition on unmount. */
   useEffect(() => {
-    if (eng) {
-      eng.setVoice(voice || null); eng.setVoices(voices); eng.setRate(rate); eng.setLang(bcp47);
-      eng.setMainLang(lang); eng.setGermanTerms((chapter.termes || []).map(t => t && t.de).filter(Boolean));
-      eng.start(null);
+    if (serverTTS === null) return;                       // still detecting
+    if (!engineRef.current) {
+      if (serverTTS) engineRef.current = new AudioReader(onState);
+      else if (speechSupported()) engineRef.current = new LessonReader(onState);
+      else return;
     }
+    const e = engineRef.current;
+    e.setVoice(voice || null); e.setVoices(voices); e.setRate(rate); e.setLang(bcp47);
+    e.setMainLang(lang); e.setGermanTerms((chapter.termes || []).map(t => t && t.de).filter(Boolean));
+    if (e.setChapterTitle) e.setChapterTitle(chapter.titre || chapter.titreCourt || "");
+    e.start(null);
     return () => {
-      if (eng) eng.stop();
+      try { e.stop(); } catch (_) {}
       try { if (recRef.current) { recRef.current.onend = null; recRef.current.abort(); } } catch (_) {}
     };
-  }, []); // eslint-disable-line
+  }, [serverTTS]); // eslint-disable-line
 
   // keyboard shortcut: K = play/pause (Space left free for scrolling), Esc expands a collapsed bar
   useEffect(() => {
@@ -383,7 +621,7 @@ function ReadAloudBar({ chapter, lang, onClose }) {
     return () => clearTimeout(t);
   }, []); // eslint-disable-line
 
-  if (!speechSupported()) {
+  if (serverTTS === false && !speechSupported()) {
     return (
       <div className="read-bar">
         <span className="read-caption">La lecture vocale n'est pas supportée par ce navigateur (essaie Chrome ou Edge).</span>
@@ -397,6 +635,7 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   if (!voiceOptions.length) voiceOptions = voices;
   const cycleRate = () => setRate(r => { const nr = RATES[(RATES.indexOf(r) + 1) % RATES.length]; try { localStorage.setItem("hml.ttsRate", nr); } catch (_) {} return nr; });
   const togglePlay = () => {
+    if (!eng) return;
     if (status === "playing") eng.pause();
     else if (status === "paused") eng.resume();
     else eng.start(null);
@@ -407,8 +646,8 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   function startListening() {
     const Ctor = getRecognitionCtor();
     if (!Ctor) { setAsk({ phase: "error", error: "La reconnaissance vocale n'est pas supportée par ce navigateur (essaie Chrome ou Edge)." }); return; }
-    if (status === "playing") eng.pause();
-    eng.stopAside();
+    if (eng && status === "playing") eng.pause();
+    if (eng) eng.stopAside();
     setAsk({ phase: "listening", interim: "" });
     const rec = new Ctor();
     rec.lang = bcp47; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
@@ -564,11 +803,17 @@ function ReadAloudBar({ chapter, lang, onClose }) {
             </div>
             <div className="read-more-row">
               <span className="read-more-label">{T("raVoice", "Voix")}</span>
-              <select className="read-voice" value={voiceURI}
-                onChange={e => { const uri = e.target.value; setVoiceURI(uri); try { localStorage.setItem("hml.ttsVoice", uri); } catch (_) {} const v = voices.find(x => x.voiceURI === uri) || null; if (eng) { eng.setVoice(v); eng.restartCurrent(); } }}
-                aria-label={T("raVoice", "Voix")}>
-                {voiceOptions.map(v => <option key={v.voiceURI} value={v.voiceURI}>{(v.lang ? v.lang.slice(0, 2).toUpperCase() + " · " : "") + v.name.replace(/\s*\(.*\)\s*/g, "").slice(0, 26)}</option>)}
-              </select>
+              {serverTTS ? (
+                <span className="read-more-label" style={{ color: "var(--ink)", textAlign: "right" }} title={T("raVoiceServer", "Voix de fond (Piper) — lecture en arrière-plan")}>
+                  <SpIcon name="speaker" size={13} /> {T("raVoiceBg", "Arrière-plan")}
+                </span>
+              ) : (
+                <select className="read-voice" value={voiceURI}
+                  onChange={e => { const uri = e.target.value; setVoiceURI(uri); try { localStorage.setItem("hml.ttsVoice", uri); } catch (_) {} const v = voices.find(x => x.voiceURI === uri) || null; if (eng) { eng.setVoice(v); eng.restartCurrent(); } }}
+                  aria-label={T("raVoice", "Voix")}>
+                  {voiceOptions.map(v => <option key={v.voiceURI} value={v.voiceURI}>{(v.lang ? v.lang.slice(0, 2).toUpperCase() + " · " : "") + v.name.replace(/\s*\(.*\)\s*/g, "").slice(0, 26)}</option>)}
+                </select>
+              )}
             </div>
           </div>
         )}

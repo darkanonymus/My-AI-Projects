@@ -26,12 +26,13 @@ except Exception:  # noqa: BLE001
 
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 import llm
+import tts
 from extract import extract_pdf
 
 ROOT = pathlib.Path(__file__).parent
@@ -74,8 +75,40 @@ async def health():
         "gemini": llm.gemini_status(),
         "claude": llm.claude_status(),
         "ollama": await llm.ollama_status(),
+        "tts": tts.status(),
         "default_provider": os.environ.get("DEFAULT_PROVIDER", "gemini"),
     }
+
+
+class TTSBody(BaseModel):
+    text: str
+    lang: str = "fr"
+
+
+@app.post("/api/tts")
+async def api_tts(body: TTSBody):
+    """Synthesize speech (Piper) → WAV bytes for background <audio> playback.
+    503 with a clear message when Piper/voices aren't set up — the frontend
+    then falls back to Web Speech (foreground only)."""
+    if not (body.text or "").strip():
+        raise HTTPException(status_code=400, detail="Texte vide.")
+    if not tts.available():
+        st = tts.status()
+        hint = (
+            "Voix Piper absentes : lance « python scripts/download_voices.py »."
+            if st.get("piper_installed")
+            else "Piper non installé : lance « pip install piper-tts »."
+        )
+        raise HTTPException(status_code=503, detail=hint)
+    try:
+        audio = await run_in_threadpool(tts.synthesize, body.text, body.lang)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Synthèse vocale impossible : {e}")
+    return Response(
+        content=audio,
+        media_type="audio/wav",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 class StateBody(BaseModel):

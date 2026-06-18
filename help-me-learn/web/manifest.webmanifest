@@ -1,0 +1,16 @@
+{
+  "name": "Help me Learn",
+  "short_name": "Help me Learn",
+  "description": "Apprends à partir de tes propres documents — avec lecture audio en arrière-plan.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#181a20",
+  "theme_color": "#181a20",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
