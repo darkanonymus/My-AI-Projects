@@ -528,57 +528,67 @@ class AudioReader {
   }
 }
 
-/* ---- hands-free wake word (Picovoice Porcupine, in-app) ----
-   Loads the engine as ESM from a CDN (its WASM is embedded as base64, so no
-   fragile relative-asset fetch) and the model + keyword files from our own
-   /vendor/picovoice/ (works on iOS Safari too — it processes audio itself,
-   unlike Web Speech). Needs a free Picovoice AccessKey. On detection it hands
-   off to the existing question flow. */
-/* esm.sh (not jsdelivr): it bundles the packages' CommonJS deps into real ESM,
-   avoiding a runtime "require is not defined" that jsdelivr's raw ESM hits. */
-const PV_ESM = {
-  porcupine: "https://esm.sh/@picovoice/porcupine-web@4.0.0",
-  wvp: "https://esm.sh/@picovoice/web-voice-processor@4.0.10",
-};
-const WAKE_KEYWORDS = {
-  Jarvis: "vendor/picovoice/jarvis_wasm.ppn",
-  Computer: "vendor/picovoice/computer_wasm.ppn",
-  Bumblebee: "vendor/picovoice/bumblebee_wasm.ppn",
-};
+/* ---- hands-free wake word (key-free: Silero VAD + our Whisper) ----
+   Picovoice Porcupine's free tier ends June 30 2026, so instead of a paid
+   wake-word engine we reuse what we already have. A tiny voice-activity
+   detector (Silero VAD, ONNX, ~2 MB, MIT, works on iOS) finds each spoken
+   segment; we transcribe it with /api/stt (Whisper) and, if it starts with
+   the chosen wake word (e.g. "Lia"), the rest is the question. The reading
+   voice never starts with the wake word, so it's naturally ignored — and the
+   mic is opened with echo cancellation so it mostly isn't even picked up.
+   Loaded the way vad-web is meant to be used buildless: classic <script> tags
+   (globals `ort` + `vad`), injected lazily on first use — NOT ESM, because
+   onnxruntime-web's wasm backend breaks when run through an ESM CDN shim. */
+const VAD_ASSETS = "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/";
+const ORT_WASM = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/";
+const VAD_BUNDLE = VAD_ASSETS + "bundle.min.js";
+const ORT_SCRIPT = ORT_WASM + "ort.js";
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[data-hml-src="' + src + '"]')) { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = src; s.async = true; s.setAttribute("data-hml-src", src);
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Échec du chargement : " + src));
+    document.head.appendChild(s);
+  });
+}
 
 class WakeWord {
-  constructor() { this.worker = null; this.wvp = null; this.active = false; this.paused = false; }
-  async start(accessKey, keywordLabel, onDetect) {
+  constructor() { this.vad = null; this.active = false; this.paused = false; this._utils = null; }
+  async start(onUtterance) {
     if (this.active) return;
-    const ppn = WAKE_KEYWORDS[keywordLabel] || WAKE_KEYWORDS.Jarvis;
-    const [pv, wvpMod] = await Promise.all([import(PV_ESM.porcupine), import(PV_ESM.wvp)]);
-    this.wvp = wvpMod.WebVoiceProcessor;
-    this.worker = await pv.PorcupineWorker.create(
-      accessKey,
-      [{ label: keywordLabel, publicPath: ppn, sensitivity: 0.6, customWritePath: "hml_kw_" + keywordLabel + ".ppn", forceWrite: true }],
-      (detection) => { if (!this.paused && detection && onDetect) onDetect(detection.label); },
-      { publicPath: "vendor/picovoice/porcupine_params.pv", customWritePath: "hml_porcupine_params.pv", forceWrite: true },
-    );
-    await this.wvp.subscribe(this.worker);
+    await loadScriptOnce(ORT_SCRIPT);          // -> window.ort
+    await loadScriptOnce(VAD_BUNDLE);          // -> window.vad (needs ort first)
+    const vadNS = window.vad;
+    if (!vadNS || !vadNS.MicVAD) throw new Error("Module VAD indisponible.");
+    this._utils = vadNS.utils;
+    this.vad = await vadNS.MicVAD.new({
+      model: "v5",
+      baseAssetPath: VAD_ASSETS,
+      onnxWASMBasePath: ORT_WASM,
+      positiveSpeechThreshold: 0.6,
+      minSpeechMs: 250,
+      // echo cancellation so the reading voice from the speakers isn't captured
+      getStream: () => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+      onSpeechEnd: (audio) => {
+        if (this.paused || !onUtterance) return;
+        try {
+          const wav = this._utils.encodeWAV(audio, 1, 16000, 1, 16);   // Float32 → 16-bit PCM WAV
+          onUtterance(new Blob([wav], { type: "audio/wav" }));
+        } catch (_) {}
+      },
+    });
+    this.vad.start();
     this.active = true; this.paused = false;
   }
-  pause() {   // release the mic while we record the question
-    if (this.active && !this.paused && this.wvp && this.worker) {
-      try { this.wvp.unsubscribe(this.worker); } catch (_) {}
-      this.paused = true;
-    }
-  }
-  resume() {
-    if (this.active && this.paused && this.wvp && this.worker) {
-      try { this.wvp.subscribe(this.worker); } catch (_) {}
-      this.paused = false;
-    }
-  }
+  pause() { if (this.active && !this.paused && this.vad) { try { this.vad.pause(); } catch (_) {} this.paused = true; } }
+  resume() { if (this.active && this.paused && this.vad) { try { this.vad.start(); } catch (_) {} this.paused = false; } }
   async stop() {
     this.active = false; this.paused = false;
-    try { if (this.wvp && this.worker) await this.wvp.unsubscribe(this.worker); } catch (_) {}
-    try { if (this.worker) { if (this.worker.release) await this.worker.release(); if (this.worker.terminate) this.worker.terminate(); } } catch (_) {}
-    this.worker = null;
+    try { if (this.vad) { this.vad.pause(); if (this.vad.destroy) this.vad.destroy(); } } catch (_) {}
+    this.vad = null;
   }
 }
 
@@ -602,13 +612,15 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   const [serverTTS, setServerTTS] = useState(null);   // null = detecting, then true/false
   const [serverSTT, setServerSTT] = useState(false);  // Whisper available → record + /api/stt
 
-  // hands-free wake word (Porcupine) — opt-in, needs a Picovoice AccessKey
+  // hands-free wake word (key-free: Silero VAD + Whisper) — opt-in
   const wakeRef = useRef(null);
   const [wakeOn, setWakeOn] = useState(() => { try { return localStorage.getItem("hml.wakeOn") === "1"; } catch (_) { return false; } });
-  const [wakeKey, setWakeKey] = useState(() => { try { return localStorage.getItem("hml.pvKey") || ""; } catch (_) { return ""; } });
-  const [wakeword, setWakeword] = useState(() => { try { return localStorage.getItem("hml.wakeword") || "Jarvis"; } catch (_) { return "Jarvis"; } });
+  const [wakeword, setWakeword] = useState(() => { try { return localStorage.getItem("hml.wakeword") || "Lia"; } catch (_) { return "Lia"; } });
   const [wakeStatus, setWakeStatus] = useState("idle");   // idle | loading | on | error
   const [wakeErr, setWakeErr] = useState("");
+  const wakewordRef = useRef(wakeword);
+  const onUtteranceRef = useRef(null);
+  useEffect(() => { wakewordRef.current = wakeword; }, [wakeword]);
 
   /* detect server-side TTS (Piper) + STT (Whisper) in one probe. TTS picks the
      audio engine; STT lets us hear a question on every platform (incl. iOS). */
@@ -685,16 +697,17 @@ function ReadAloudBar({ chapter, lang, onClose }) {
     return () => clearTimeout(t);
   }, []); // eslint-disable-line
 
-  // start/stop the wake-word engine when it's toggled on (and a key is set)
+  // start/stop the wake-word engine when it's toggled on
+  onUtteranceRef.current = onUtterance;
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (wakeRef.current) { try { await wakeRef.current.stop(); } catch (_) {} wakeRef.current = null; }
-      if (!wakeOn || !wakeKey) { setWakeStatus("idle"); return; }
+      if (!wakeOn) { setWakeStatus("idle"); return; }
       setWakeStatus("loading"); setWakeErr("");
       const w = new WakeWord();
       try {
-        await w.start(wakeKey, wakeword, () => onWake());
+        await w.start((blob) => { if (onUtteranceRef.current) onUtteranceRef.current(blob); });
         if (cancelled) { await w.stop(); return; }
         wakeRef.current = w; setWakeStatus("on");
       } catch (e) {
@@ -702,14 +715,27 @@ function ReadAloudBar({ chapter, lang, onClose }) {
       }
     })();
     return () => { cancelled = true; if (wakeRef.current) { try { wakeRef.current.stop(); } catch (_) {} wakeRef.current = null; } };
-  }, [wakeOn, wakeKey, wakeword]); // eslint-disable-line
+  }, [wakeOn]); // eslint-disable-line
 
-  /* wake word heard → pause listening for the keyword, then ask a question */
-  function onWake() {
-    if (wakeRef.current) wakeRef.current.pause();
-    startListening();
-  }
   function resumeWake() { if (wakeRef.current) wakeRef.current.resume(); }
+
+  /* a VAD speech segment ended → transcribe; if it begins with the wake word,
+     the rest is the question (or, if just the wake word, record one). */
+  async function onUtterance(blob) {
+    if (wakeRef.current) wakeRef.current.pause();   // stop capturing while we think/answer
+    let text = "";
+    try { text = await sttBlob(blob, "wake.wav"); } catch (_) { resumeWake(); return; }
+    const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+    const w = norm(wakewordRef.current || "lia");
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    let pos = -1;
+    for (let i = 0; i < Math.min(words.length, 3); i++) { if (w && norm(words[i]).indexOf(w) >= 0) { pos = i; break; } }
+    if (pos < 0) { resumeWake(); return; }                       // not addressed to the assistant
+    const remainder = words.slice(pos + 1).join(" ").trim();
+    if (eng && status === "playing") eng.pause();
+    if (remainder.split(/\s+/).filter(Boolean).length >= 2) doAsk(remainder);   // asked in one breath
+    else startListening();                                       // just the wake word → record the question
+  }
 
   if (serverTTS === false && !speechSupported()) {
     return (
@@ -784,17 +810,20 @@ function ReadAloudBar({ chapter, lang, onClose }) {
     try { if (m.recorder && m.recorder.state !== "inactive") m.recorder.stop(); } catch (_) {}
   }
 
+  async function sttBlob(blob, filename) {
+    const fd = new FormData();
+    fd.append("audio", blob, filename || "q.wav");
+    fd.append("lang", lang);
+    const r = await fetch("/api/stt", { method: "POST", body: fd });
+    if (!r.ok) throw new Error("Transcription (" + r.status + ")");
+    return (((await r.json()) || {}).text || "").trim();
+  }
+
   async function transcribeAndAsk(blob, mime) {
     setAsk({ phase: "thinking", question: "…" });
     try {
       const ext = (mime || "").indexOf("mp4") >= 0 ? "m4a" : (mime || "").indexOf("ogg") >= 0 ? "ogg" : "webm";
-      const fd = new FormData();
-      fd.append("audio", blob, "question." + ext);
-      fd.append("lang", lang);
-      const r = await fetch("/api/stt", { method: "POST", body: fd });
-      if (!r.ok) throw new Error("Transcription (" + r.status + ")");
-      const data = await r.json();
-      const q = ((data && data.text) || "").trim();
+      const q = await sttBlob(blob, "question." + ext);
       if (!q) { setAsk({ phase: "error", error: "Je n'ai pas saisi de question. Réessaie." }); return; }
       doAsk(q);
     } catch (e) {
@@ -987,25 +1016,15 @@ function ReadAloudBar({ chapter, lang, onClose }) {
               <React.Fragment>
                 <div className="read-more-row">
                   <span className="read-more-label">{T("raWakeWord", "Mot")}</span>
-                  <select className="read-voice" value={wakeword}
-                    onChange={e => { setWakeword(e.target.value); try { localStorage.setItem("hml.wakeword", e.target.value); } catch (_) {} }}>
-                    {Object.keys(WAKE_KEYWORDS).map(k => <option key={k} value={k}>{k}</option>)}
-                  </select>
+                  <input type="text" className="read-voice" value={wakeword} maxLength={20}
+                    style={{ width: 120, textAlign: "right" }} aria-label={T("raWakeWord", "Mot")}
+                    onChange={e => { const v = e.target.value; setWakeword(v); try { localStorage.setItem("hml.wakeword", v); } catch (_) {} }} />
                 </div>
-                {!wakeKey && (
-                  <div className="read-more-row" style={{ flexDirection: "column", alignItems: "stretch", gap: "var(--space-1)" }}>
-                    <input type="password" className="read-voice" style={{ width: "100%" }}
-                      placeholder={T("raWakeKey", "Clé Picovoice (AccessKey)")}
-                      onChange={e => { const v = e.target.value.trim(); setWakeKey(v); try { localStorage.setItem("hml.pvKey", v); } catch (_) {} }} />
-                    <a href="https://console.picovoice.ai/" target="_blank" rel="noreferrer" style={{ fontSize: "var(--fs-small)" }}>{T("raWakeGetKey", "Obtenir une clé gratuite →")}</a>
-                  </div>
-                )}
                 <div className="read-more-row">
                   <span className="read-more-label" style={{ fontSize: "var(--fs-small)", color: wakeStatus === "error" ? "var(--bad)" : "var(--ink-faint)", textAlign: "right" }}>
                     {wakeStatus === "loading" ? T("raWakeLoading", "Chargement…")
-                      : wakeStatus === "on" ? ("🎙 " + T("raWakeReady", "dis « ") + wakeword + " »")
+                      : wakeStatus === "on" ? ("🎙 " + T("raWakeReady", "dis « ") + (wakeword || "Lia") + " … »")
                       : wakeStatus === "error" ? (wakeErr || "Erreur")
-                      : !wakeKey ? T("raWakeNeedKey", "colle ta clé pour activer")
                       : ""}
                   </span>
                 </div>
