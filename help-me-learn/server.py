@@ -39,7 +39,9 @@ from extract import extract_pdf
 
 ROOT = pathlib.Path(__file__).parent
 WEB  = ROOT / "web"
-DB   = ROOT / "data.db"
+# DB path is configurable (HML_DB) so a container can persist it on a volume.
+DB   = pathlib.Path(os.environ.get("HML_DB", str(ROOT / "data.db")))
+DB.parent.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # SQLite — single kv table, one row per named state slot

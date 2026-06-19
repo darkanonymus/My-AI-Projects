@@ -1,0 +1,6 @@
+# Automatic HTTPS (Let's Encrypt) for $DOMAIN, reverse-proxied to the app.
+# $DOMAIN comes from ../.env (e.g. DOMAIN=help-me-learn.duckdns.org).
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:8000
+}

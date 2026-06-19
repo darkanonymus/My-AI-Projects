@@ -12,12 +12,13 @@ rhasspy/piper-voices repo on Hugging Face.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-VOICES_DIR = ROOT / "voices"
+VOICES_DIR = pathlib.Path(os.environ.get("PIPER_VOICES_DIR", str(ROOT / "voices")))
 BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
 # lang -> curated voice models (first = default). Names are
