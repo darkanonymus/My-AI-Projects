@@ -43,9 +43,43 @@ VOICE_FILES = {
     "pt": os.environ.get("PIPER_VOICE_PT", "pt_BR-faber-medium"),
 }
 
-_voices: dict[str, object] = {}   # lang -> loaded PiperVoice (lazy, cached)
+_voices: dict[str, object] = {}   # model name -> loaded PiperVoice (lazy, cached)
 _piper_err: str | None = None
 _PiperVoice = None
+
+# ---------------------------------------------------------------------------
+# Text normalization — read symbols/numbers as words so Piper doesn't mangle
+# them ("%", "→", "≤", "25" …). espeak handles plain numbers, but math symbols
+# and a few others come out wrong; we spell those out per language.
+# ---------------------------------------------------------------------------
+_SYMBOLS = {
+    "fr": {"%": " pour cent ", "→": " vers ", "->": " vers ", "×": " fois ", "÷": " divisé par ", "≈": " environ ", "≤": " inférieur ou égal à ", "≥": " supérieur ou égal à ", "≠": " différent de ", "±": " plus ou moins ", "°": " degrés ", "√": " racine de ", "∑": " somme ", "∞": " l'infini ", "&": " et "},
+    "de": {"%": " Prozent ", "→": " nach ", "×": " mal ", "÷": " geteilt durch ", "≈": " etwa ", "≤": " kleiner gleich ", "≥": " größer gleich ", "≠": " ungleich ", "±": " plus minus ", "°": " Grad ", "√": " Wurzel aus ", "∑": " Summe ", "∞": " unendlich ", "&": " und "},
+    "en": {"%": " percent ", "→": " to ", "×": " times ", "÷": " divided by ", "≈": " about ", "≤": " less than or equal to ", "≥": " greater than or equal to ", "≠": " not equal to ", "±": " plus or minus ", "°": " degrees ", "√": " square root of ", "∑": " sum ", "∞": " infinity ", "&": " and "},
+    "es": {"%": " por ciento ", "→": " a ", "×": " por ", "÷": " dividido por ", "≈": " aproximadamente ", "≤": " menor o igual que ", "≥": " mayor o igual que ", "≠": " distinto de ", "±": " más menos ", "°": " grados ", "√": " raíz de ", "∑": " suma ", "∞": " infinito ", "&": " y "},
+    "it": {"%": " per cento ", "→": " a ", "×": " per ", "÷": " diviso ", "≈": " circa ", "≤": " minore o uguale a ", "≥": " maggiore o uguale a ", "≠": " diverso da ", "±": " più o meno ", "°": " gradi ", "√": " radice di ", "∑": " somma ", "∞": " infinito ", "&": " e "},
+    "pt": {"%": " por cento ", "→": " para ", "×": " vezes ", "÷": " dividido por ", "≈": " cerca de ", "≤": " menor ou igual a ", "≥": " maior ou igual a ", "≠": " diferente de ", "±": " mais ou menos ", "°": " graus ", "√": " raiz de ", "∑": " soma ", "∞": " infinito ", "&": " e "},
+}
+
+
+def _normalize(text: str, lang: str) -> str:
+    syms = _SYMBOLS.get(lang, _SYMBOLS["fr"])
+    for k, v in syms.items():
+        if k in text:
+            text = text.replace(k, v)
+    try:                                    # spell out standalone integers
+        from num2words import num2words
+        import re as _re
+        def _n(m):
+            try:
+                return num2words(int(m.group(0)), lang=lang)
+            except Exception:  # noqa: BLE001
+                return m.group(0)
+        text = _re.sub(r"(?<![\d.,])\d{1,9}(?![\d.,])", _n, text)
+    except Exception:  # noqa: BLE001
+        pass
+    import re as _re2
+    return _re2.sub(r"\s{2,}", " ", text).strip()
 
 
 def _load_piper():
@@ -65,10 +99,30 @@ def _load_piper():
         return None
 
 
-def _voice_path(lang: str) -> pathlib.Path | None:
-    name = VOICE_FILES.get(lang) or VOICE_FILES["fr"]
+def _name_for(lang: str, voice: str | None = None) -> str:
+    return voice or VOICE_FILES.get(lang) or VOICE_FILES["fr"]
+
+
+def _voice_path_by_name(name: str) -> pathlib.Path | None:
     onnx = VOICES_DIR / f"{name}.onnx"
     return onnx if onnx.exists() else None
+
+
+def _voice_path(lang: str, voice: str | None = None) -> pathlib.Path | None:
+    return _voice_path_by_name(_name_for(lang, voice))
+
+
+def list_installed_voices() -> list[dict]:
+    """Every Piper voice present on disk, grouped by language code, for the
+    in-app voice picker. e.g. {'name':'fr_FR-siwis-medium','lang':'fr'}."""
+    out = []
+    try:
+        for p in sorted(VOICES_DIR.glob("*.onnx")):
+            nm = p.stem
+            out.append({"name": nm, "lang": nm.split("_", 1)[0].lower()})
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def available() -> bool:
@@ -84,28 +138,34 @@ def status() -> dict:
         "piper_installed": bool(_load_piper()),
         "error": _piper_err,
         "voices": {lang: (_voice_path(lang) is not None) for lang in VOICE_FILES},
+        "voices_installed": list_installed_voices(),
         "voices_dir": str(VOICES_DIR),
     }
 
 
-def _get_voice(lang: str):
+def _get_voice(lang: str, voice: str | None = None):
     PiperVoice = _load_piper()
     if not PiperVoice:
         raise RuntimeError(
             f"Piper n'est pas installé ({_piper_err}). Lance : pip install piper-tts"
         )
-    if lang not in _voices:
-        p = _voice_path(lang)
-        if p is None:                      # requested voice missing -> fall back to French
-            p, lang = _voice_path("fr"), "fr"
+    name = _name_for(lang, voice)
+    if name not in _voices:
+        p = _voice_path_by_name(name)
+        if p is None:                      # requested voice missing -> language default -> French
+            name = VOICE_FILES.get(lang) or VOICE_FILES["fr"]
+            p = _voice_path_by_name(name)
+        if p is None:
+            name = VOICE_FILES["fr"]
+            p = _voice_path_by_name(name)
         if p is None:
             raise RuntimeError(
                 f"Aucune voix Piper trouvée dans {VOICES_DIR}. "
                 f"Lance : python scripts/download_voices.py"
             )
         cfg = pathlib.Path(str(p) + ".json")
-        _voices[lang] = PiperVoice.load(str(p), config_path=str(cfg) if cfg.exists() else None)
-    return _voices[lang]
+        _voices[name] = PiperVoice.load(str(p), config_path=str(cfg) if cfg.exists() else None)
+    return _voices[name]
 
 
 def _synth_wav(voice, text: str) -> bytes:
@@ -151,9 +211,9 @@ def synthesize_segments(segments: list[dict]) -> bytes:
     if not segs:
         raise ValueError("Aucun segment.")
     if len(segs) == 1:
-        return synthesize(segs[0]["text"], segs[0].get("lang", "fr"))
+        return synthesize(segs[0]["text"], segs[0].get("lang", "fr"), segs[0].get("voice"))
 
-    sig = "||".join(f"{(s.get('lang') or 'fr')[:2]}:{s['text']}" for s in segs)
+    sig = "||".join(f"{_name_for((s.get('lang') or 'fr')[:2], s.get('voice'))}:{s['text']}" for s in segs)
     key = hashlib.sha1(("seg|" + sig).encode("utf-8")).hexdigest()
     cache = CACHE_DIR / f"{key}.wav"
     if cache.exists():
@@ -165,7 +225,7 @@ def synthesize_segments(segments: list[dict]) -> bytes:
     nchannels = sampwidth = framerate = None
     pcm_parts: list[bytes] = []
     for s in segs:
-        with wave.open(io.BytesIO(synthesize(s["text"], s.get("lang", "fr"))), "rb") as wf:
+        with wave.open(io.BytesIO(synthesize(s["text"], s.get("lang", "fr"), s.get("voice"))), "rb") as wf:
             nchannels, sampwidth, framerate = wf.getnchannels(), wf.getsampwidth(), wf.getframerate()
             pcm_parts.append(wf.readframes(wf.getnframes()))
 
@@ -183,8 +243,10 @@ def synthesize_segments(segments: list[dict]) -> bytes:
     return data
 
 
-def synthesize(text: str, lang: str = "fr") -> bytes:
-    """Return WAV bytes for `text` in `lang` ('fr'/'de'/'en'). Cached on disk."""
+def synthesize(text: str, lang: str = "fr", voice: str | None = None) -> bytes:
+    """Return WAV bytes for `text` in `lang`, optionally with a specific `voice`
+    model. Text is normalized (symbols/numbers) first. Cached on disk per
+    (voice, normalized text)."""
     text = (text or "").strip()
     if not text:
         raise ValueError("Texte vide.")
@@ -193,8 +255,10 @@ def synthesize(text: str, lang: str = "fr") -> bytes:
     lang = (lang or "fr")[:2].lower()
     if lang not in VOICE_FILES:
         lang = "fr"
+    name = _name_for(lang, voice)
+    norm = _normalize(text, lang)
 
-    key = hashlib.sha1(f"{lang}|{VOICE_FILES.get(lang)}|{text}".encode("utf-8")).hexdigest()
+    key = hashlib.sha1(f"{name}|{norm}".encode("utf-8")).hexdigest()
     cache = CACHE_DIR / f"{key}.wav"
     if cache.exists():
         try:
@@ -202,7 +266,7 @@ def synthesize(text: str, lang: str = "fr") -> bytes:
         except Exception:  # noqa: BLE001
             pass
 
-    data = _synth_wav(_get_voice(lang), text)
+    data = _synth_wav(_get_voice(lang, voice), norm)
     try:
         cache.write_bytes(data)
     except Exception:  # noqa: BLE001

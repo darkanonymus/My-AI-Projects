@@ -334,6 +334,7 @@ class AudioReader {
     this.lastNode = null; this.rate = 1; this.mainLang = "fr";
     this.germanMatcher = null; this.root = ".content-inner";
     this.chapterTitle = ""; this.mode = "lesson";   // "lesson" | "aside"
+    this.voiceMap = {};          // lang -> chosen Piper voice model (else server default)
     this.follow = true; this._scrollBound = false;
     this._scrollHandler = () => { if (this.follow) { this.follow = false; this.onState({ follow: false }); } };
     this._urls = new Map();      // key "lang|text" -> Promise<objectURL> (dedup + prefetch)
@@ -355,6 +356,7 @@ class AudioReader {
   setMainLang(c) { this.mainLang = c || "fr"; }
   setGermanTerms(terms) { try { this.germanMatcher = buildGermanMatcher(terms); } catch (_) { this.germanMatcher = null; } }
   setChapterTitle(t) { this.chapterTitle = t || ""; }
+  setVoiceMap(m) { this.voiceMap = m || {}; }
 
   _setupMediaSession() {
     if (!("mediaSession" in navigator)) return;
@@ -422,13 +424,15 @@ class AudioReader {
       : [{ text: item.text, lang: item.lang || this.mainLang }];
   }
   _clipURL(item) {
-    const segs = this._segmentsOf(item);
-    const key = segs.map(s => (s.lang || this.mainLang) + ":" + s.text).join("||");
+    const segs = this._segmentsOf(item).map(s => {
+      const lang = s.lang || this.mainLang;
+      const voice = this.voiceMap[lang];
+      return voice ? { text: s.text, lang, voice } : { text: s.text, lang };
+    });
+    const key = segs.map(s => (s.voice || s.lang) + ":" + s.text).join("||");
     if (this._urls.has(key)) return this._urls.get(key);
     // one /api/tts request per SENTENCE → one gapless clip (multi-voice if mixed)
-    const body = segs.length === 1
-      ? { text: segs[0].text, lang: segs[0].lang || this.mainLang }
-      : { segments: segs };
+    const body = segs.length === 1 ? segs[0] : { segments: segs };
     const p = fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -638,6 +642,10 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   const mediaRef = useRef(null);                       // { recorder, stream, chunks } for server STT
   const [serverTTS, setServerTTS] = useState(null);   // null = detecting, then true/false
   const [serverSTT, setServerSTT] = useState(false);  // Whisper available → record + /api/stt
+  const [srvVoices, setSrvVoices] = useState([]);     // installed Piper voices [{name,lang}]
+  const [voiceMap, setVoiceMap] = useState(() => {    // chosen voice per language (persisted)
+    const m = {}; ["fr", "en", "de", "es", "it", "pt"].forEach(l => { try { const v = localStorage.getItem("hml.voice." + l); if (v) m[l] = v; } catch (_) {} }); return m;
+  });
 
   // hands-free wake word (key-free: Silero VAD + Whisper) — opt-in
   const wakeRef = useRef(null);
@@ -654,7 +662,7 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   useEffect(() => {
     let alive = true;
     fetch("/api/health").then(r => r.json())
-      .then(h => { if (alive) { setServerTTS(!!(h && h.tts && h.tts.available)); setServerSTT(!!(h && h.stt && h.stt.available)); } })
+      .then(h => { if (alive) { setServerTTS(!!(h && h.tts && h.tts.available)); setServerSTT(!!(h && h.stt && h.stt.available)); setSrvVoices((h && h.tts && h.tts.voices_installed) || []); } })
       .catch(() => { if (alive) setServerTTS(false); });
     return () => { alive = false; };
   }, []);
@@ -677,7 +685,8 @@ function ReadAloudBar({ chapter, lang, onClose }) {
     eng.setLang(bcp47);
     eng.setMainLang(lang);
     eng.setGermanTerms((chapter.termes || []).map(t => t && t.de).filter(Boolean));
-  }, [eng, voice, voices, rate, bcp47, lang, chapter]);
+    if (eng.setVoiceMap) eng.setVoiceMap(voiceMap);
+  }, [eng, voice, voices, rate, bcp47, lang, chapter, voiceMap]);
   useEffect(() => { if (!voiceURI && voices.length) { const v = pickDefaultVoice(voices, bcp47); if (v) setVoiceURI(v.voiceURI); } }, [voices, bcp47, voiceURI]);
 
   /* once TTS support is known, build the right engine, configure it, auto-start.
@@ -1025,9 +1034,26 @@ function ReadAloudBar({ chapter, lang, onClose }) {
             <div className="read-more-row">
               <span className="read-more-label">{T("raVoice", "Voix")}</span>
               {serverTTS ? (
-                <span className="read-more-label" style={{ color: "var(--ink)", textAlign: "right" }} title={T("raVoiceServer", "Voix de fond (Piper) — lecture en arrière-plan")}>
-                  <SpIcon name="speaker" size={13} /> {T("raVoiceBg", "Arrière-plan")}
-                </span>
+                (() => {
+                  const forLang = srvVoices.filter(v => v.lang === (lang || "fr")).slice(0, 5);
+                  if (forLang.length < 2) {
+                    return <span className="read-more-label" style={{ color: "var(--ink)", textAlign: "right" }} title={T("raVoiceServer", "Voix de fond (Piper)")}><SpIcon name="speaker" size={13} /> {T("raVoiceBg", "Arrière-plan")}</span>;
+                  }
+                  const pretty = n => { const s = n.replace(/^[a-z]{2}_[A-Z]{2}-/, "").replace(/-(medium|low|high|x_low)$/, ""); return s.charAt(0).toUpperCase() + s.slice(1); };
+                  return (
+                    <select className="read-voice" value={voiceMap[lang] || ""} aria-label={T("raVoice", "Voix")}
+                      onChange={e => {
+                        const val = e.target.value; const nv = { ...voiceMap };
+                        if (val) nv[lang] = val; else delete nv[lang];
+                        setVoiceMap(nv);
+                        try { if (val) localStorage.setItem("hml.voice." + lang, val); else localStorage.removeItem("hml.voice." + lang); } catch (_) {}
+                        if (eng) { eng.setVoiceMap(nv); eng.restartCurrent(); }
+                      }}>
+                      <option value="">{T("raVoiceDefault", "Par défaut")}</option>
+                      {forLang.map(v => <option key={v.name} value={v.name}>{pretty(v.name)}</option>)}
+                    </select>
+                  );
+                })()
               ) : (
                 <select className="read-voice" value={voiceURI}
                   onChange={e => { const uri = e.target.value; setVoiceURI(uri); try { localStorage.setItem("hml.ttsVoice", uri); } catch (_) {} const v = voices.find(x => x.voiceURI === uri) || null; if (eng) { eng.setVoice(v); eng.restartCurrent(); } }}

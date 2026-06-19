@@ -20,6 +20,10 @@ piper-tts>=1.2               # offline neural TTS (https://github.com/rhasspy/pi
 # Speech-to-text for hands-free voice Q&A (incl. iOS, where browser STT is
 # unavailable). Model downloads on first use. Falls back to Web Speech if absent.
 faster-whisper>=1.0          # offline STT (CTranslate2 Whisper)
+
+# Offline course translation + read-aloud text normalization
+argostranslate>=1.9          # offline neural translation (display a course in another language)
+num2words>=0.5               # speak numbers as words (read-aloud normalization)
 # Offline course translation (display a course in another language without an
 # API). Language packs download on first use. Falls back to a clear message if
 # absent. After install: python -c "import argostranslate.package as p; p.update_package_index()"

@@ -108,7 +108,8 @@ async def api_translate(body: TranslateBody):
 class TTSBody(BaseModel):
     text: str | None = None
     lang: str = "fr"
-    segments: list[dict] | None = None   # [{text, lang}] → one gapless multi-voice clip
+    voice: str | None = None             # specific Piper voice model (else language default)
+    segments: list[dict] | None = None   # [{text, lang, voice?}] → one gapless multi-voice clip
 
 
 @app.post("/api/tts")
@@ -131,7 +132,7 @@ async def api_tts(body: TTSBody):
         if body.segments:
             audio = await run_in_threadpool(tts.synthesize_segments, body.segments)
         else:
-            audio = await run_in_threadpool(tts.synthesize, body.text, body.lang)
+            audio = await run_in_threadpool(tts.synthesize, body.text, body.lang, body.voice)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Synthèse vocale impossible : {e}")
     return Response(

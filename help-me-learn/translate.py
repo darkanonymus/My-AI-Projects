@@ -101,28 +101,44 @@ def _ensure(frm: str, to: str) -> None:
         _installed_pairs.add((frm, to))
 
 
-def _seg(s: str, frm: str, to: str, tr) -> str:
-    if not s.strip():
-        return s
-    # Argos trims surrounding whitespace; keep it so spans like <<term>> and
-    # $math$ don't get glued to adjacent words.
-    lead = s[: len(s) - len(s.lstrip())]
-    trail = s[len(s.rstrip()):]
-    return lead + tr.translate(s.strip(), frm, to) + trail
+def _tr_block(block: str, frm: str, to: str, tr) -> str:
+    """Translate a block FAST: one Argos call for the whole block instead of one
+    per line/segment. We hold each line's markdown marker (####, -, 1.) ourselves
+    and mask inline math/code/<<terms>>/[[C]] with ZZnZZ sentinels (verified to
+    survive Argos, incl. the English pivot), then translate all line-bodies joined
+    by newlines in a single call. Falls back to per-line if the newline count
+    drifts, so alignment is never lost."""
+    lines = block.split("\n")
+    prefixes, bodies = [], []
+    for ln in lines:
+        if not ln.strip():
+            prefixes.append(ln); bodies.append(None); continue
+        m = _PREFIX.match(ln)
+        prefixes.append(m.group(1) or ""); bodies.append(m.group(2))
 
+    spans: list[str] = []
+    def mask(b: str) -> str:
+        return _INLINE.sub(lambda mm: (spans.append(mm.group(0)), "ZZ%dZZ" % (len(spans) - 1))[1], b)
 
-def _line(ln: str, frm: str, to: str, tr) -> str:
-    if not ln.strip():
-        return ln
-    m = _PREFIX.match(ln)
-    prefix, body = (m.group(1) or ""), m.group(2)
-    out, last = [], 0
-    for mm in _INLINE.finditer(body):       # keep inline math/code/terms verbatim
-        out.append(_seg(body[last:mm.start()], frm, to, tr))
-        out.append(mm.group(0))
-        last = mm.end()
-    out.append(_seg(body[last:], frm, to, tr))
-    return prefix + "".join(out)
+    idxs = [i for i, b in enumerate(bodies) if b is not None and b.strip()]
+    if not idxs:
+        return block
+    masked = [mask(bodies[i]) for i in idxs]
+    joined = "\n".join(masked)
+    trans = tr.translate(joined, frm, to)
+    parts = trans.split("\n")
+    if len(parts) != len(masked):                 # newline drift → safe per-line
+        parts = [tr.translate(mb, frm, to) for mb in masked]
+
+    def unmask(t: str) -> str:
+        for i, s in enumerate(spans):
+            t = t.replace("ZZ%dZZ" % i, s)
+        return t
+
+    res = list(lines)
+    for k, i in enumerate(idxs):
+        res[i] = prefixes[i] + unmask(parts[k])
+    return "\n".join(res)
 
 
 def translate_text(text: str, source: str, target: str) -> str:
@@ -135,12 +151,10 @@ def translate_text(text: str, source: str, target: str) -> str:
     _ensure(source, target)
     out, last = [], 0
     for m in _FENCE.finditer(text):         # keep fenced ```fig```/code blocks verbatim
-        block = text[last:m.start()]
-        out.append("\n".join(_line(ln, source, target, tr) for ln in block.split("\n")))
+        out.append(_tr_block(text[last:m.start()], source, target, tr))
         out.append(m.group(0))
         last = m.end()
-    tail = text[last:]
-    out.append("\n".join(_line(ln, source, target, tr) for ln in tail.split("\n")))
+    out.append(_tr_block(text[last:], source, target, tr))
     return "".join(out)
 
 
