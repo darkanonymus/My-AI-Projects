@@ -665,9 +665,21 @@ function App() {
           <div className="brand-text">
             <span className="brand-title" style={{ fontSize: 16 }}>Help me Learn</span>
           </div>
-          <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Moteur d'IA" style={{ position: "relative" }}>
+          {generating && (
+            <button className="icon-btn" onClick={stopGeneration} aria-label={window.ui("btnStopGen")} title={window.ui("btnStopGen")} style={{ color: "var(--bad)" }}>
+              <AIcon name="x" size={17} />
+            </button>
+          )}
+          <button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Moteur d'IA" title="Choisir le moteur d'IA" style={{ position: "relative" }}>
             <AIcon name="spark" size={17} />
             <span style={{ position: "absolute", top: 6, right: 6, width: 8, height: 8, borderRadius: 99, background: provider === "claude" ? "var(--accent)" : provider === "gemini" ? "var(--good)" : "var(--ochre)", border: "1.5px solid var(--surface)" }} />
+          </button>
+          <button className="icon-btn" onClick={() => setShowPrefs(true)} aria-label={window.ui("btnPrefs")} title={window.ui("prefsTitle")}>
+            <AIcon name="target" size={17} />
+          </button>
+          <button className="icon-btn" onClick={() => setShowDiag(true)} aria-label={window.ui("diagBtn")} title={window.ui("diagBtn")} style={{ position: "relative" }}>
+            <AIcon name="warn" size={17} />
+            {diagErrors > 0 && <span style={{ position: "absolute", top: 4, right: 4, minWidth: 14, height: 14, padding: "0 3px", borderRadius: 99, background: "var(--bad)", color: "#fff", fontSize: 9, lineHeight: "14px", textAlign: "center" }}>{diagErrors}</span>}
           </button>
           <button className="icon-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} aria-label="Thème">
             <AIcon name={theme === "dark" ? "sun" : "moon"} size={17} />
