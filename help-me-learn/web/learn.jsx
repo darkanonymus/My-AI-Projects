@@ -464,11 +464,51 @@ function SelectionAssistant({ chapter, onAddInsertion, onAddHiddenBlock, onCheck
   );
 }
 
+/* languages we can display+read a course in (Piper voices + Argos packs) */
+const READ_LANGS = [["fr", "Français"], ["en", "English"], ["de", "Deutsch"], ["es", "Español"], ["it", "Italiano"], ["pt", "Português"]];
+
+/* build a translated VIEW of the chapter from its cached i18n overlay — the
+   original course is never mutated, so switching back to the source is free. */
+function applyTranslationView(chapter, lang) {
+  const t = chapter.i18n && chapter.i18n[lang];
+  if (!t) return chapter;
+  return {
+    ...chapter,
+    titre: t.titre || chapter.titre,
+    theme: t.theme != null ? t.theme : chapter.theme,
+    sections: chapter.sections.map(s => {
+      const ts = t.sections && t.sections[s.n];
+      return ts ? { ...s, titre: ts.titre || s.titre, contenu: ts.contenu != null ? ts.contenu : s.contenu } : s;
+    }),
+  };
+}
+
 /* ---------- Full lesson view for current chapter ---------- */
-function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock }) {
+function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock, onTranslate }) {
   const done = chapter.sections.filter(s => s.status === "done").length;
   const total = chapter.sections.length;
   const [reading, setReading] = window.useState(false);
+  const origLang = chapter.lang || window.getLangue() || "fr";
+  const [displayLang, setDisplayLang] = window.useState(origLang);
+  const [translating, setTranslating] = window.useState(false);
+  const [transErr, setTransErr] = window.useState("");
+  const [transProg, setTransProg] = window.useState("");
+  useEffect(() => { setDisplayLang(chapter.lang || window.getLangue() || "fr"); setTransErr(""); }, [chapter.id]); // eslint-disable-line
+
+  const view = (displayLang === origLang) ? chapter : applyTranslationView(chapter, displayLang);
+
+  async function pickLang(L) {
+    setTransErr("");
+    if (L === origLang || (chapter.i18n && chapter.i18n[L])) { setDisplayLang(L); return; }
+    if (!onTranslate) return;
+    setReading(false);                       // stop reading while content changes
+    setTranslating(true); setTransProg("");
+    const res = await onTranslate(chapter.id, L, (k, n) => setTransProg(k + "/" + n));
+    setTranslating(false); setTransProg("");
+    if (res && res.ok) setDisplayLang(L);
+    else setTransErr((res && res.error) || "Traduction impossible.");
+  }
+
   return (
     <div>
       <div className="lesson-head">
@@ -478,11 +518,21 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
           {chapter.fromFile && <Tag variant="mono"><LIcon name="file" size={12} /> {chapter.fromFile}</Tag>}
         </div>
         <div className="lesson-title-row">
-          <h1 className="lesson-title">{chapter.titre || "Leçon en préparation…"}</h1>
+          <h1 className="lesson-title">{view.titre || "Leçon en préparation…"}</h1>
           {done > 0 && (
-            <button className="btn btn-sm" onClick={() => setReading(true)} title={window.ui("raListenTitle")} style={{ flex: "none", marginTop: 2 }} disabled={reading}>
+            <button className="btn btn-sm" onClick={() => setReading(true)} title={window.ui("raListenTitle")} style={{ flex: "none", marginTop: 2 }} disabled={reading || translating}>
               <LIcon name="speaker" size={15} /> {window.ui("raListen")}
             </button>
+          )}
+          {done > 0 && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", marginTop: 2 }} title="Afficher / lire le cours dans une autre langue">
+              <LIcon name="globe" size={15} />
+              <select className="read-voice" value={displayLang} disabled={translating}
+                onChange={e => pickLang(e.target.value)} aria-label="Langue du cours">
+                {READ_LANGS.map(([code, label]) => <option key={code} value={code}>{label}{code === origLang ? " ✓" : (chapter.i18n && chapter.i18n[code] ? " •" : "")}</option>)}
+              </select>
+              {translating && <window.Spinner size={14} />}
+            </div>
           )}
           {done > 0 && (
             <button className="btn btn-sm" onClick={() => onDownload && onDownload(chapter.id)} title={window.ui("btnDownload")} style={{ flex: "none", marginTop: 2 }}>
@@ -490,7 +540,9 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
             </button>
           )}
         </div>
-        {chapter.theme && <p className="lesson-theme">{chapter.theme}</p>}
+        {transErr && <p className="lesson-theme" style={{ color: "var(--bad)" }}>{transErr}</p>}
+        {translating && <p className="lesson-theme">Traduction du cours… {transProg} (une seule fois par langue, puis instantané)</p>}
+        {view.theme && <p className="lesson-theme">{view.theme}</p>}
       </div>
 
       {(chapter.status === "generating" || done < total) && done < total && (
@@ -507,8 +559,8 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
 
       <Glossary termes={chapter.termes} />
 
-      {chapter.sections.map(s => (
-        <SectionCard key={s.n} section={s} chapter={chapter} onRetry={() => onRetrySection(chapter.id, s.n)}
+      {view.sections.map(s => (
+        <SectionCard key={s.n} section={s} chapter={view} onRetry={() => onRetrySection(chapter.id, s.n)}
           onAddToBank={(insId, passage) => onCheckBank(chapter.id, passage, insId)}
           onDeleteInsertion={(insId, alsoRemove) => onDeleteInsertion(chapter.id, insId, alsoRemove)}
           onRestoreHiddenBlock={(hideId) => onRestoreHiddenBlock(chapter.id, hideId)} />
@@ -530,13 +582,13 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
         </Callout>
       )}
 
-      {reading && <window.ReadAloudBar chapter={chapter} lang={window.getLangue()} onClose={() => setReading(false)} />}
+      {reading && <window.ReadAloudBar chapter={view} lang={displayLang} onClose={() => setReading(false)} />}
     </div>
   );
 }
 
 /* ---------- The tab ---------- */
-function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, onSelect, onDownload, home, aiReady, onOpenSettings, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock }) {
+function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, onSelect, onDownload, home, aiReady, onOpenSettings, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock, onTranslate }) {
   if (!current || home) {
     return (
       <div>
@@ -575,7 +627,7 @@ function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, o
         </div>
       )}
       <Composer onGenerate={onGenerate} generating={generating} compact aiReady={aiReady} onOpenSettings={onOpenSettings} />
-      <LessonView chapter={current} onRetrySection={onRetrySection} onDownload={onDownload} onAddInsertion={onAddInsertion} onDeleteInsertion={onDeleteInsertion} onCheckBank={onCheckBank} onAddHiddenBlock={onAddHiddenBlock} onRestoreHiddenBlock={onRestoreHiddenBlock} />
+      <LessonView chapter={current} onRetrySection={onRetrySection} onDownload={onDownload} onAddInsertion={onAddInsertion} onDeleteInsertion={onDeleteInsertion} onCheckBank={onCheckBank} onAddHiddenBlock={onAddHiddenBlock} onRestoreHiddenBlock={onRestoreHiddenBlock} onTranslate={onTranslate} />
     </div>
   );
 }

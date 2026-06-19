@@ -34,6 +34,7 @@ from starlette.concurrency import run_in_threadpool
 import llm
 import tts
 import stt
+import translate as translate_mod
 from extract import extract_pdf
 
 ROOT = pathlib.Path(__file__).parent
@@ -78,8 +79,30 @@ async def health():
         "ollama": await llm.ollama_status(),
         "tts": tts.status(),
         "stt": stt.status(),
+        "translate": translate_mod.status(),
         "default_provider": os.environ.get("DEFAULT_PROVIDER", "gemini"),
     }
+
+
+class TranslateBody(BaseModel):
+    texts: list[str]
+    source: str = "fr"
+    target: str
+
+
+@app.post("/api/translate")
+async def api_translate(body: TranslateBody):
+    """Translate a batch of course strings offline (Argos), preserving math /
+    code / <<terms>> / markdown. 503 when Argos isn't installed."""
+    if body.source == body.target:
+        return {"translations": body.texts}
+    if not translate_mod.available():
+        raise HTTPException(status_code=503, detail="Traduction hors-ligne indisponible : lance « pip install argostranslate ».")
+    try:
+        out = await run_in_threadpool(translate_mod.translate_batch, body.texts, body.source, body.target)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Traduction impossible : {e}")
+    return {"translations": out}
 
 
 class TTSBody(BaseModel):

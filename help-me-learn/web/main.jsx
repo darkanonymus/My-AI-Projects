@@ -286,6 +286,41 @@ function App() {
   }
   function flash(msg) { setToast(msg); setTimeout(() => setToast(""), 2600); }
 
+  /* ---- translate a whole course into another display language (offline, cached) ----
+     Done section-by-section (small requests) so no single call is long enough to
+     trip a proxy/tunnel timeout; reports progress and caches the result. */
+  async function translateChapter(chapterId, target, onProgress) {
+    const ch = chapters.find(c => c.id === chapterId);
+    if (!ch) return { ok: false, error: "Cours introuvable." };
+    const source = ch.lang || window.getLangue() || "fr";
+    if (source === target) return { ok: true };
+    if (ch.i18n && ch.i18n[target]) return { ok: true };          // already cached
+    async function post(texts) {
+      const r = await fetch("/api/translate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texts, source, target }),
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || ("HTTP " + r.status)); }
+      return (await r.json()).translations || [];
+    }
+    try {
+      const total = ch.sections.length + 1;
+      let step = 0;
+      const head = await post([ch.titre || "", ch.theme || ""]);
+      const t = { titre: head[0] || ch.titre, theme: head[1] != null ? head[1] : ch.theme, sections: {} };
+      if (onProgress) onProgress(++step, total);
+      for (const s of ch.sections) {
+        const out = await post([s.titre || "", s.contenu || ""]);
+        t.sections[s.n] = { titre: out[0] || s.titre, contenu: out[1] != null ? out[1] : s.contenu };
+        if (onProgress) onProgress(++step, total);
+      }
+      patchChapter(chapterId, c => ({ i18n: { ...(c.i18n || {}), [target]: t }, lang: c.lang || source }));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || String(e) };
+    }
+  }
+
   /* ---- contextual Q&A: chapter.insertions[] (never touches lesson markdown) ---- */
   function addInsertion(chapterId, partial) {
     const insertion = { id: newInsertionId(), addedToCards: false, addedToQuiz: false, createdAt: Date.now(), ...partial };
@@ -612,7 +647,7 @@ function App() {
           </div>
         )}
         <main className="content-inner">
-          {tab === "learn" && <LearnTab chapters={chapters} current={current} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} />}
+          {tab === "learn" && <LearnTab chapters={chapters} current={current} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} onTranslate={translateChapter} />}
           {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} />}
           {tab === "quiz" && <QuizTab chapters={chapters} current={current} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} />}
           {tab === "cards" && <FlashTab chapters={chapters} current={current} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}
