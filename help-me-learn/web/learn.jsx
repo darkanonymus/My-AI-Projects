@@ -467,45 +467,58 @@ function SelectionAssistant({ chapter, onAddInsertion, onAddHiddenBlock, onCheck
 /* languages we can display+read a course in (Piper voices + Argos packs) */
 const READ_LANGS = [["fr", "Français"], ["en", "English"], ["de", "Deutsch"], ["es", "Español"], ["it", "Italiano"], ["pt", "Português"]];
 
-/* build a translated VIEW of the chapter from its cached i18n overlay — the
-   original course is never mutated, so switching back to the source is free. */
-function applyTranslationView(chapter, lang) {
-  const t = chapter.i18n && chapter.i18n[lang];
+/* build a translated VIEW of the chapter for its chosen display language, from
+   the cached i18n overlay — titre, theme, sections, quiz, flashcards, glossary.
+   The original course is never mutated, so switching back to the source is free.
+   Exposed on window so every tab (Learn/Quiz/Cards) shows the same language. */
+function courseView(chapter) {
+  if (!chapter) return chapter;
+  const lang = chapter.displayLang;
+  const t = lang && chapter.i18n && chapter.i18n[lang];
   if (!t) return chapter;
-  return {
+  const out = {
     ...chapter,
     titre: t.titre || chapter.titre,
     theme: t.theme != null ? t.theme : chapter.theme,
-    sections: chapter.sections.map(s => {
+    sections: (chapter.sections || []).map(s => {
       const ts = t.sections && t.sections[s.n];
       return ts ? { ...s, titre: ts.titre || s.titre, contenu: ts.contenu != null ? ts.contenu : s.contenu } : s;
     }),
   };
+  if (t.quiz && Array.isArray(chapter.quiz)) {
+    out.quiz = chapter.quiz.map((q, i) => t.quiz[i] ? { ...q, q: t.quiz[i].q || q.q, options: t.quiz[i].options || q.options, explication: t.quiz[i].explication != null ? t.quiz[i].explication : q.explication } : q);
+  }
+  if (t.cards && Array.isArray(chapter.cards)) {
+    out.cards = chapter.cards.map((c, i) => t.cards[i] ? { ...c, recto: t.cards[i].recto || c.recto, verso: t.cards[i].verso != null ? t.cards[i].verso : c.verso } : c);
+  }
+  if (t.termes && Array.isArray(chapter.termes)) {   // keep .de (the German term), translate the rest
+    out.termes = chapter.termes.map((tm, i) => t.termes[i] ? { ...tm, fr: t.termes[i].fr || tm.fr, translation: t.termes[i].translation != null ? t.termes[i].translation : tm.translation, def: t.termes[i].def != null ? t.termes[i].def : tm.def } : tm);
+  }
+  return out;
 }
+window.courseView = courseView;
 
 /* ---------- Full lesson view for current chapter ---------- */
-function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock, onTranslate }) {
+function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock, onTranslate, onSetDisplayLang }) {
   const done = chapter.sections.filter(s => s.status === "done").length;
   const total = chapter.sections.length;
   const [reading, setReading] = window.useState(false);
   const origLang = chapter.lang || window.getLangue() || "fr";
-  const [displayLang, setDisplayLang] = window.useState(origLang);
+  const displayLang = chapter.displayLang || origLang;     // persisted on the chapter
   const [translating, setTranslating] = window.useState(false);
   const [transErr, setTransErr] = window.useState("");
   const [transProg, setTransProg] = window.useState("");
-  useEffect(() => { setDisplayLang(chapter.lang || window.getLangue() || "fr"); setTransErr(""); }, [chapter.id]); // eslint-disable-line
-
-  const view = (displayLang === origLang) ? chapter : applyTranslationView(chapter, displayLang);
+  const view = chapter;   // already overlaid in the chosen language by window.courseView (in main.jsx)
 
   async function pickLang(L) {
     setTransErr("");
-    if (L === origLang || (chapter.i18n && chapter.i18n[L])) { setDisplayLang(L); return; }
+    if (L === origLang || (chapter.i18n && chapter.i18n[L])) { if (onSetDisplayLang) onSetDisplayLang(chapter.id, L); return; }
     if (!onTranslate) return;
     setReading(false);                       // stop reading while content changes
     setTranslating(true); setTransProg("");
     const res = await onTranslate(chapter.id, L, (k, n) => setTransProg(k + "/" + n));
     setTranslating(false); setTransProg("");
-    if (res && res.ok) setDisplayLang(L);
+    if (res && res.ok) { if (onSetDisplayLang) onSetDisplayLang(chapter.id, L); }
     else setTransErr((res && res.error) || "Traduction impossible.");
   }
 
@@ -588,7 +601,7 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
 }
 
 /* ---------- The tab ---------- */
-function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, onSelect, onDownload, home, aiReady, onOpenSettings, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock, onTranslate }) {
+function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, onSelect, onDownload, home, aiReady, onOpenSettings, onAddInsertion, onDeleteInsertion, onCheckBank, onAddHiddenBlock, onRestoreHiddenBlock, onTranslate, onSetDisplayLang }) {
   if (!current || home) {
     return (
       <div>
@@ -627,7 +640,7 @@ function LearnTab({ chapters, current, generating, onGenerate, onRetrySection, o
         </div>
       )}
       <Composer onGenerate={onGenerate} generating={generating} compact aiReady={aiReady} onOpenSettings={onOpenSettings} />
-      <LessonView chapter={current} onRetrySection={onRetrySection} onDownload={onDownload} onAddInsertion={onAddInsertion} onDeleteInsertion={onDeleteInsertion} onCheckBank={onCheckBank} onAddHiddenBlock={onAddHiddenBlock} onRestoreHiddenBlock={onRestoreHiddenBlock} onTranslate={onTranslate} />
+      <LessonView chapter={current} onRetrySection={onRetrySection} onDownload={onDownload} onAddInsertion={onAddInsertion} onDeleteInsertion={onDeleteInsertion} onCheckBank={onCheckBank} onAddHiddenBlock={onAddHiddenBlock} onRestoreHiddenBlock={onRestoreHiddenBlock} onTranslate={onTranslate} onSetDisplayLang={onSetDisplayLang} />
     </div>
   );
 }

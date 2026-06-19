@@ -277,6 +277,9 @@ function App() {
   }, [chapters, currentId, theme]);
 
   const current = chapters.find(c => c.id === currentId) || null;
+  // display the course in its chosen language (translated overlay) across all tabs
+  const currentView = (current && window.courseView) ? window.courseView(current) : current;
+  function setChapterLang(chapterId, lang) { patchChapter(chapterId, { displayLang: lang }); }
 
   function patchChapter(id, patch) {
     setChapters(prev => prev.map(c => c.id === id ? { ...c, ...(typeof patch === "function" ? patch(c) : patch) } : c));
@@ -304,7 +307,10 @@ function App() {
       return (await r.json()).translations || [];
     }
     try {
-      const total = ch.sections.length + 1;
+      const hasQuiz = Array.isArray(ch.quiz) && ch.quiz.length;
+      const hasCards = Array.isArray(ch.cards) && ch.cards.length;
+      const hasTermes = Array.isArray(ch.termes) && ch.termes.length;
+      const total = ch.sections.length + 1 + (hasQuiz ? 1 : 0) + (hasCards ? 1 : 0) + (hasTermes ? 1 : 0);
       let step = 0;
       const head = await post([ch.titre || "", ch.theme || ""]);
       const t = { titre: head[0] || ch.titre, theme: head[1] != null ? head[1] : ch.theme, sections: {} };
@@ -312,6 +318,34 @@ function App() {
       for (const s of ch.sections) {
         const out = await post([s.titre || "", s.contenu || ""]);
         t.sections[s.n] = { titre: out[0] || s.titre, contenu: out[1] != null ? out[1] : s.contenu };
+        if (onProgress) onProgress(++step, total);
+      }
+      // quiz: q + options + explication per question (keep `correct` index)
+      if (hasQuiz) {
+        const qt = [], shape = [];
+        ch.quiz.forEach(q => { const o = q.options || []; shape.push(o.length); qt.push(q.q || ""); o.forEach(x => qt.push(x || "")); qt.push(q.explication || ""); });
+        const out = await post(qt);
+        let k = 0;
+        t.quiz = ch.quiz.map((q, i) => {
+          const qq = out[k++] || q.q; const opts = [];
+          for (let j = 0; j < shape[i]; j++) opts.push(out[k++]);
+          const ex = out[k++];
+          return { q: qq, options: opts, explication: ex != null ? ex : q.explication };
+        });
+        if (onProgress) onProgress(++step, total);
+      }
+      // flashcards: recto + verso
+      if (hasCards) {
+        const ct = []; ch.cards.forEach(c => { ct.push(c.recto || ""); ct.push(c.verso || ""); });
+        const out = await post(ct);
+        t.cards = ch.cards.map((c, i) => ({ recto: out[2 * i] || c.recto, verso: out[2 * i + 1] != null ? out[2 * i + 1] : c.verso }));
+        if (onProgress) onProgress(++step, total);
+      }
+      // glossary: translate the explanation/translation, KEEP the German term (.de)
+      if (hasTermes) {
+        const gt = []; ch.termes.forEach(tm => { gt.push(tm.fr || ""); gt.push(tm.translation || ""); gt.push(tm.def || ""); });
+        const out = await post(gt);
+        t.termes = ch.termes.map((tm, i) => ({ fr: out[3 * i] || tm.fr, translation: out[3 * i + 1] != null ? out[3 * i + 1] : tm.translation, def: out[3 * i + 2] != null ? out[3 * i + 2] : tm.def }));
         if (onProgress) onProgress(++step, total);
       }
       patchChapter(chapterId, c => ({ i18n: { ...(c.i18n || {}), [target]: t }, lang: c.lang || source }));
@@ -647,10 +681,10 @@ function App() {
           </div>
         )}
         <main className="content-inner">
-          {tab === "learn" && <LearnTab chapters={chapters} current={current} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} onTranslate={translateChapter} />}
+          {tab === "learn" && <LearnTab chapters={chapters} current={currentView} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} onTranslate={translateChapter} onSetDisplayLang={setChapterLang} />}
           {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} />}
-          {tab === "quiz" && <QuizTab chapters={chapters} current={current} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} />}
-          {tab === "cards" && <FlashTab chapters={chapters} current={current} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}
+          {tab === "quiz" && <QuizTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} />}
+          {tab === "cards" && <FlashTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}
           {tab === "plan" && <PlanTab chapters={chapters} planDays={planDays} />}
         </main>
       </div>
