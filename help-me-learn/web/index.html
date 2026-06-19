@@ -677,6 +677,22 @@ button { font-family: inherit; cursor: pointer; }
 }
 .read-toc button:hover { background: var(--surface-2); color: var(--ink); }
 .read-toc button[data-cur="true"] { background: var(--accent-soft); color: var(--accent-deep); }
+
+/* course language dropdown (lesson header) — mirrors .read-toc, opens downward */
+.lang-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: 210px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px;
+  box-shadow: var(--shadow-lg); padding: var(--space-1);
+}
+.lang-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; border: none; background: none;
+  color: var(--ink-soft); font-size: var(--fs-small); cursor: pointer;
+  transition: background-color 0.14s var(--ease-out), color 0.14s var(--ease-out);
+}
+.lang-opt:hover { background: var(--surface-2); color: var(--ink); }
+.lang-opt[data-active="true"] { background: var(--accent-soft); color: var(--accent-deep); }
+.lang-opt .lang-tag { font-size: 11px; color: var(--ink-faint); font-family: var(--font-mono, monospace); }
 @media (max-width: 880px) { .read-voice { max-width: 92px; } .read-rate { min-width: 40px; } }
 
 /* voice Q&A (Phase A) */

@@ -508,7 +508,9 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
   const [translating, setTranslating] = window.useState(false);
   const [transErr, setTransErr] = window.useState("");
   const [transProg, setTransProg] = window.useState("");
+  const [langMenuOpen, setLangMenuOpen] = window.useState(false);
   const view = chapter;   // already overlaid in the chosen language by window.courseView (in main.jsx)
+  const curLangLabel = (READ_LANGS.find(([c]) => c === displayLang) || [null, displayLang])[1];
 
   async function pickLang(L) {
     setTransErr("");
@@ -538,13 +540,23 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
             </button>
           )}
           {done > 0 && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", marginTop: 2 }} title="Afficher / lire le cours dans une autre langue">
-              <LIcon name="globe" size={15} />
-              <select className="read-voice" value={displayLang} disabled={translating}
-                onChange={e => pickLang(e.target.value)} aria-label="Langue du cours">
-                {READ_LANGS.map(([code, label]) => <option key={code} value={code}>{label}{code === origLang ? " ✓" : (chapter.i18n && chapter.i18n[code] ? " •" : "")}</option>)}
-              </select>
-              {translating && <window.Spinner size={14} />}
+            <div style={{ position: "relative", flex: "none", marginTop: 2 }}>
+              <button className="btn btn-sm" disabled={translating} aria-haspopup="listbox" aria-expanded={langMenuOpen}
+                title="Afficher / lire le cours dans une autre langue" onClick={() => setLangMenuOpen(o => !o)}>
+                <LIcon name="globe" size={15} /> {curLangLabel}
+                {translating ? <window.Spinner size={13} /> : <LIcon name="chevrondown" size={13} />}
+              </button>
+              {langMenuOpen && (
+                <div className="lang-menu" role="listbox">
+                  {READ_LANGS.map(([code, label]) => (
+                    <button key={code} className="lang-opt" role="option" aria-selected={code === displayLang} data-active={code === displayLang}
+                      onClick={() => { setLangMenuOpen(false); pickLang(code); }}>
+                      <span>{label}</span>
+                      <span className="lang-tag">{code === origLang ? "original" : (chapter.i18n && chapter.i18n[code] ? "✓" : "")}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {done > 0 && (

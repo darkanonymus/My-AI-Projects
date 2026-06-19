@@ -35,9 +35,9 @@ except Exception:  # noqa: BLE001
 # voices/<name>.onnx with its config at voices/<name>.onnx.json).
 # Override any of these via env if you prefer a different voice.
 VOICE_FILES = {
-    "fr": os.environ.get("PIPER_VOICE_FR", "fr_FR-siwis-medium"),
+    "fr": os.environ.get("PIPER_VOICE_FR", "fr_FR-tom-medium"),     # warmest/most natural FR
     "de": os.environ.get("PIPER_VOICE_DE", "de_DE-thorsten-medium"),
-    "en": os.environ.get("PIPER_VOICE_EN", "en_US-amy-medium"),
+    "en": os.environ.get("PIPER_VOICE_EN", "en_US-lessac-medium"),  # most natural EN
     "es": os.environ.get("PIPER_VOICE_ES", "es_ES-davefx-medium"),
     "it": os.environ.get("PIPER_VOICE_IT", "it_IT-paola-medium"),
     "pt": os.environ.get("PIPER_VOICE_PT", "pt_BR-faber-medium"),
