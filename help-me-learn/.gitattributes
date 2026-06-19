@@ -1,0 +1,5 @@
+# Scripts that run on the Linux VM/containers must stay LF (CRLF breaks bash/docker).
+*.sh           text eol=lf
+deploy/Dockerfile   text eol=lf
+deploy/Caddyfile    text eol=lf
+*.py           text eol=lf
