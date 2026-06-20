@@ -211,6 +211,13 @@ function App() {
   const [tab, setTab] = uS(SAVED && SAVED.chapters && SAVED.chapters.length ? "library" : "learn");
   const [chapters, setChapters] = uS(SAVED ? SAVED.chapters : []);
   const [currentId, setCurrentId] = uS(SAVED ? SAVED.currentId : null);
+  const [progressLog, setProgressLog] = uS((SAVED && Array.isArray(SAVED.progressLog)) ? SAVED.progressLog : []);
+  function logProgress(ev) {
+    setProgressLog(prev => {
+      const next = prev.concat([{ t: Date.now(), ...ev }]);
+      return next.length > 2000 ? next.slice(next.length - 2000) : next;   // keep it bounded
+    });
+  }
   const [home, setHome] = uS(!(SAVED && SAVED.chapters && SAVED.chapters.length));
   const [generating, setGenerating] = uS(false);
   const [toast, setToast] = uS("");
@@ -273,6 +280,7 @@ function App() {
     { id: "library", label: window.ui("tabLibrary"), icon: "library" },
     { id: "quiz",    label: window.ui("tabQuiz"),    icon: "quiz" },
     { id: "cards",   label: window.ui("tabCards"),   icon: "cards" },
+    { id: "progress", label: window.ui("tabProgress") || "Progression", icon: "progress" },
     ...(planEnabled ? [{ id: "plan", label: window.ui("tabPlan") + " " + planDays + window.ui("tabPlanUnit"), icon: "plan" }] : []),
   ];
   function closeSettings() { setProviderState(window.getProvider()); setShowSettings(false); }
@@ -291,14 +299,14 @@ function App() {
   /* persist (with graceful fallback if image blobs blow the quota) */
   uE(() => {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ chapters, currentId, theme }));
+      localStorage.setItem(LS_KEY, JSON.stringify({ chapters, currentId, theme, progressLog }));
     } catch (e) {
       try {
-        const light = { chapters: chapters.map(c => ({ ...c, figures: (c.figures || []).map(f => ({ id: f.id, page: f.page, w: f.w, h: f.h })) })), currentId, theme };
+        const light = { chapters: chapters.map(c => ({ ...c, figures: (c.figures || []).map(f => ({ id: f.id, page: f.page, w: f.w, h: f.h })) })), currentId, theme, progressLog };
         localStorage.setItem(LS_KEY, JSON.stringify(light));
       } catch (_) { /* still over quota — keep text in memory only */ }
     }
-  }, [chapters, currentId, theme]);
+  }, [chapters, currentId, theme, progressLog]);
 
   /* keep the original-image registry in sync so ```img``` blocks resolve */
   uE(() => {
@@ -347,13 +355,14 @@ function App() {
           setChapters(serverChs);
           if (serverState.currentId) setCurrentId(serverState.currentId);
           if (serverState.theme)     setTheme(serverState.theme);
+          if (Array.isArray(serverState.progressLog)) setProgressLog(serverState.progressLog);
           if (!serverChs.length) { setHome(true); setTab("learn"); }
         } else if (localChs.length > serverChs.length) {
           // Local has more chapters — push local state to server to update it
           fetch("/api/state", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ data: JSON.stringify({ chapters: localChs, currentId, theme }) }),
+            body: JSON.stringify({ data: JSON.stringify({ chapters: localChs, currentId, theme, progressLog }) }),
           }).catch(() => {});
         }
       } catch (e) {}
@@ -367,11 +376,11 @@ function App() {
       fetch("/api/state", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ data: JSON.stringify({ chapters, currentId, theme }) }),
+        body: JSON.stringify({ data: JSON.stringify({ chapters, currentId, theme, progressLog }) }),
       }).catch(() => {});
     }, 2500); // debounce 2.5s after last change
     return () => { if (_saveTimer.current) clearTimeout(_saveTimer.current); };
-  }, [chapters, currentId, theme]);
+  }, [chapters, currentId, theme, progressLog]);
 
   const current = chapters.find(c => c.id === currentId) || null;
   // display the course in its chosen language (translated overlay) across all tabs
@@ -674,7 +683,16 @@ function App() {
       undoTimer.current = setTimeout(() => setUndo(null), 6000);
     }
   }
-  function toggleMastered(id) { patchChapter(id, c => ({ mastered: !c.mastered })); }
+  function toggleMastered(id) {
+    const ch = chaptersRef.current.find(c => c.id === id);
+    const becoming = !(ch && ch.mastered);
+    patchChapter(id, c => ({ mastered: !c.mastered, masteredAt: !c.mastered ? Date.now() : c.masteredAt }));
+    logProgress({ type: becoming ? "master" : "unmaster", courseId: id });
+  }
+  function onQuizDone(courseId, score, total) {
+    if (!total) return;
+    logProgress({ type: "quiz", courseId, score, total });
+  }
 
   function downloadChapter(id) {
     const ch = chaptersRef.current.find(c => c.id === id); if (!ch) return;
@@ -904,8 +922,9 @@ function App() {
         <main className="content-inner">
           {tab === "learn" && <LearnTab chapters={chapters} current={currentView} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} onTranslate={translateChapter} onSetDisplayLang={setChapterLang} />}
           {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} onRecoverImages={recoverImages} />}
-          {tab === "quiz" && <QuizTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} />}
+          {tab === "quiz" && <QuizTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} onQuizComplete={onQuizDone} />}
           {tab === "cards" && <FlashTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}
+          {tab === "progress" && <window.ProgressDashboard chapters={chapters} progressLog={progressLog} onOpen={openCourse} />}
           {tab === "plan" && <PlanTab chapters={chapters} planDays={planDays} />}
         </main>
       </div>

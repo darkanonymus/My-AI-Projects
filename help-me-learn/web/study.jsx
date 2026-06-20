@@ -4,9 +4,8 @@
 const { Icon: SIcon } = window;
 
 /* ---------- QUIZ ---------- */
-function QuizQuestion({ item, index }) {
-  const [picked, setPicked] = useState(null);
-  const answered = picked !== null;
+function QuizQuestion({ item, index, picked, onPick }) {
+  const answered = picked != null;
   return (
     <div className="card" style={{ padding: "var(--space-5)", marginBottom: "var(--space-3)" }}>
       <div style={{ display: "flex", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
@@ -24,7 +23,7 @@ function QuizQuestion({ item, index }) {
             else { col = "var(--ink-faint)"; }
           }
           return (
-            <button key={i} onClick={() => !answered && setPicked(i)} disabled={answered}
+            <button key={i} onClick={() => !answered && onPick(index, i)} disabled={answered}
               style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", textAlign: "left", padding: "var(--space-3) var(--space-4)",
                 border: "1.5px solid " + bd, background: bg, color: col, borderRadius: "var(--radius-sm)", fontSize: "var(--fs-body)",
                 fontFamily: "var(--font-sans)", transition: "all 0.16s var(--ease-out)", cursor: answered ? "default" : "pointer" }}>
@@ -53,9 +52,22 @@ function QuizQuestion({ item, index }) {
   );
 }
 
-function QuizTab({ chapters, current, onSelect, onRetry, generating }) {
+function QuizTab({ chapters, current, onSelect, onRetry, generating, onQuizComplete }) {
+  const [answers, setAnswers] = useState({});
+  const [recorded, setRecorded] = useState(false);
+  const curId = current && current.id;
+  useEffect(() => { setAnswers({}); setRecorded(false); }, [curId]);
+  const quiz = current && current.quiz;
+  const total = (quiz && quiz.length) || 0;
+  const answeredCount = Object.keys(answers).length;
+  const score = quiz ? quiz.reduce((a, q, i) => a + (answers[i] === q.correct ? 1 : 0), 0) : 0;
+  const allDone = total > 0 && answeredCount === total;
+  useEffect(() => {
+    if (allDone && !recorded) { setRecorded(true); if (onQuizComplete) onQuizComplete(curId, score, total); }
+  }, [allDone, recorded]);
   if (!current) return <Empty icon="quiz" title={window.ui("quizEmpty")}>{window.ui("quizEmptyDesc")}</Empty>;
-  const quiz = current.quiz;
+  const pct = total ? Math.round(score / total * 100) : 0;
+  const tone = pct >= 80 ? "var(--good)" : pct >= 50 ? "var(--accent-deep)" : "var(--bad)";
   return (
     <div>
       <PageHead kicker={window.ui("quizKicker")} title={window.ui("quizTitle")}>{window.ui("quizFrom")}{current.titre || "…"}{window.ui("quizFromSuffix")}</PageHead>
@@ -68,8 +80,25 @@ function QuizTab({ chapters, current, onSelect, onRetry, generating }) {
         </div>
       )}
       {quiz && quiz.length > 0 && (
-        <div key={current.id}>
-          {quiz.map((item, i) => <QuizQuestion key={i} item={item} index={i} />)}
+        <div key={curId}>
+          <div className="card" style={{ padding: "var(--space-4) var(--space-5)", marginBottom: "var(--space-4)", display: "flex", alignItems: "center", gap: "var(--space-4)", flexWrap: "wrap" }}>
+            {allDone ? (
+              <>
+                <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: "var(--fs-h3)", color: tone }}>{score}/{total}</span>
+                <span style={{ flex: 1, minWidth: 120 }}>
+                  <span className="soft" style={{ fontSize: "var(--fs-small)" }}>Score · {pct}%</span>
+                  <ProgressBar value={score} max={total} />
+                </span>
+                <button className="btn btn-sm" onClick={() => { setAnswers({}); setRecorded(false); }}><SIcon name="flip" size={14} /> Recommencer</button>
+              </>
+            ) : (
+              <>
+                <span className="soft" style={{ fontSize: "var(--fs-small)", flex: "none" }}>{answeredCount} / {total}</span>
+                <span style={{ flex: 1, minWidth: 120 }}><ProgressBar value={answeredCount} max={total} /></span>
+              </>
+            )}
+          </div>
+          {quiz.map((item, i) => <QuizQuestion key={i} item={item} index={i} picked={answers[i]} onPick={(qi, oi) => setAnswers(a => ({ ...a, [qi]: oi }))} />)}
         </div>
       )}
       {(!quiz || quiz.length === 0) && current.quizStatus === "done" && (
