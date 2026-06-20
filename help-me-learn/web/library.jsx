@@ -62,7 +62,7 @@ function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload }) {
         </div>
 
         {/* actions */}
-        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "auto", flexWrap: "wrap", alignItems: "center" }}>
+        <div className="card-actions" style={{ display: "flex", gap: "var(--space-2)", marginTop: "auto", flexWrap: "wrap", alignItems: "center" }}>
           <button className="btn btn-sm btn-primary" onClick={() => onOpen(ch.id, "learn")}><BIcon name="open" size={14} /> {window.ui("btnOpen")}</button>
           {ch.quiz && ch.quiz.length > 0 && <button className="btn btn-sm" onClick={() => onOpen(ch.id, "quiz")}><BIcon name="quiz" size={14} /></button>}
           {ch.cards && ch.cards.length > 0 && <button className="btn btn-sm" onClick={() => onOpen(ch.id, "cards")}><BIcon name="cards" size={14} /></button>}

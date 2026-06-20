@@ -509,6 +509,7 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
   const [transErr, setTransErr] = window.useState("");
   const [transProg, setTransProg] = window.useState("");
   const [langMenuOpen, setLangMenuOpen] = window.useState(false);
+  window.useOutsideClose(langMenuOpen, () => setLangMenuOpen(false), ".lang-wrap");
   const view = chapter;   // already overlaid in the chosen language by window.courseView (in main.jsx)
   const curLangLabel = (READ_LANGS.find(([c]) => c === displayLang) || [null, displayLang])[1];
 
@@ -540,7 +541,7 @@ function LessonView({ chapter, onRetrySection, onDownload, onAddInsertion, onDel
             </button>
           )}
           {done > 0 && (
-            <div style={{ position: "relative", flex: "none", marginTop: 2 }}>
+            <div className="lang-wrap" style={{ position: "relative", flex: "none", marginTop: 2 }}>
               <button className="btn btn-sm" disabled={translating} aria-haspopup="listbox" aria-expanded={langMenuOpen}
                 title="Afficher / lire le cours dans une autre langue" onClick={() => setLangMenuOpen(o => !o)}>
                 <LIcon name="globe" size={15} /> {curLangLabel}

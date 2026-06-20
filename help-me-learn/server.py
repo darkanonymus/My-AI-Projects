@@ -386,4 +386,7 @@ if WEB.is_dir():
 
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="127.0.0.1", port=int(os.environ.get("PORT", "8000")), reload=False)
+    # HOST defaults to localhost; set HOST=0.0.0.0 to expose on the LAN
+    # (e.g. to test on a phone over the same Wi-Fi).
+    uvicorn.run("server:app", host=os.environ.get("HOST", "127.0.0.1"),
+                port=int(os.environ.get("PORT", "8000")), reload=False)

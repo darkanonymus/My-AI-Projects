@@ -634,6 +634,8 @@ function ReadAloudBar({ chapter, lang, onClose }) {
   const [voiceURI, setVoiceURI] = useState(() => { try { return localStorage.getItem("hml.ttsVoice") || ""; } catch (_) { return ""; } });
   const [tocOpen, setTocOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  window.useOutsideClose(tocOpen, () => setTocOpen(false), ".toc-wrap");
+  window.useOutsideClose(moreOpen, () => setMoreOpen(false), ".more-wrap");
   const [ask, setAsk] = useState(null); // { phase:'listening'|'thinking'|'answer'|'error', question, interim, answer, source, error }
   const [barCollapsed, setBarCollapsed] = useState(false);
   const [showHint, setShowHint] = useState(() => { try { return localStorage.getItem("hml.ttsHintSeen") !== "1"; } catch (_) { return true; } });
@@ -984,7 +986,7 @@ function ReadAloudBar({ chapter, lang, onClose }) {
       )}
 
       {/* table of contents */}
-      <div style={{ position: "relative", flex: "none" }}>
+      <div className="toc-wrap" style={{ position: "relative", flex: "none" }}>
         <button className="icon-btn" title={T("raToc", "Sommaire")} aria-label={T("raToc", "Sommaire")} onClick={() => setTocOpen(o => !o)}><SpIcon name="library" size={17} /></button>
         {tocOpen && (
           <div className="read-toc">
@@ -1023,7 +1025,7 @@ function ReadAloudBar({ chapter, lang, onClose }) {
       <div className="read-caption" title={caption}>{caption || (status === "idle" ? "Prêt à lire" : "…")}</div>
 
       {/* speed + voice tucked into an overflow menu to keep the bar uncluttered */}
-      <div style={{ position: "relative", flex: "none" }}>
+      <div className="more-wrap" style={{ position: "relative", flex: "none" }}>
         <button className="icon-btn" title={T("raOptions", "Options de lecture")} aria-label={T("raOptions", "Options de lecture")} onClick={() => setMoreOpen(o => !o)}><SpIcon name="menu" size={16} /></button>
         {moreOpen && (
           <div className="read-more">

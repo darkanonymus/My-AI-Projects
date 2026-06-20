@@ -253,6 +253,12 @@ button { font-family: inherit; cursor: pointer; }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-soft); }
 .btn-ghost:hover { background: var(--surface-2); color: var(--ink); border-color: var(--line); }
 .btn-sm { padding: 7px 12px; font-size: 13.5px; border-radius: 9px; }
+/* phones: give the library card actions a comfortable ~40px touch target
+   (desktop keeps its tighter editorial density) */
+@media (max-width: 880px) {
+  .card-actions .btn-sm { min-height: 40px; }
+  .card-actions .btn-sm:not(.btn-primary) { min-width: 40px; justify-content: center; }
+}
 
 .tag {
   display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
@@ -712,6 +718,14 @@ button { font-family: inherit; cursor: pointer; }
   border-bottom: 1px solid var(--line); margin-bottom: var(--space-1);
 }
 .acct-pop-head .mono { color: var(--ink); font-family: var(--font-mono, monospace); font-size: 12px; word-break: break-all; }
+.acct-logout {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left; padding: 9px 10px; border-radius: 8px; border: none; background: none;
+  color: var(--ink-soft); font-size: var(--fs-small); cursor: pointer;
+  transition: background-color 0.14s var(--ease-out), color 0.14s var(--ease-out);
+}
+.acct-logout:hover { background: var(--bad-soft); color: var(--bad); }
+.acct-logout svg { flex: none; opacity: 0.8; }
 @media (max-width: 880px) { .read-voice { max-width: 92px; } .read-rate { min-width: 40px; } }
 
 /* voice Q&A (Phase A) */

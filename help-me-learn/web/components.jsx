@@ -47,6 +47,7 @@ function Icon({ name, size = 18 }) {
     speaker: <><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></>,
     mic:     <><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></>,
     chevrondown: <path d="M6 9l6 6 6-6"/>,
+    logout:  <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></>,
     openbook: <><path d="M12 6.6C10.4 5.2 7.2 4.6 4 5.1v13.2c3.2-.5 6.4.1 8 1.5 1.6-1.4 4.8-2 8-1.5V5.1c-3.2-.5-6.4.1-8 1.5z"/><path d="M12 6.6V20.3"/></>,
   };
   return <svg {...p}>{paths[name] || null}</svg>;
@@ -134,6 +135,28 @@ function Reveal({ as = "div", delay = 0, className = "", style, children, ...res
   );
 }
 
+/* close a dropdown when clicking/tapping outside it or pressing Escape.
+   `selector` matches the menu's own root(s) — clicks inside are ignored, so
+   the trigger button (which must live inside that root) keeps toggling cleanly.
+   Works with several roots sharing one state (e.g. desktop + mobile copies). */
+function useOutsideClose(open, onClose, selector) {
+  const cb = useRef(onClose);
+  cb.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e) => {
+      if (!(e.target instanceof Element) || !e.target.closest(selector)) cb.current();
+    };
+    const onKey = (e) => { if (e.key === "Escape") cb.current(); };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, selector]);
+}
+
 /* section heading used across tabs — pass hero for the signature lesson entry */
 function PageHead({ kicker, title, children, hero }) {
   return (
@@ -145,4 +168,4 @@ function PageHead({ kicker, title, children, hero }) {
   );
 }
 
-Object.assign(window, { Icon, Spinner, ProgressBar, Tag, Ring, Empty, PageHead, useReveal, Reveal, useState, useEffect, useRef });
+Object.assign(window, { Icon, Spinner, ProgressBar, Tag, Ring, Empty, PageHead, useReveal, Reveal, useOutsideClose, useState, useEffect, useRef });
