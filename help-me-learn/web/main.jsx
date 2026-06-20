@@ -684,6 +684,41 @@ function App() {
     } catch (e) { flash("Échec du téléchargement."); }
   }
 
+  /* Recover a course's ORIGINAL images by re-importing its PDF: re-extract,
+     remap each image to the existing figure id (same page, nearest size) and
+     upload it — so the course + its progress are preserved, no regeneration. */
+  function recoverImages(ch) {
+    const oldFigs = (ch && ch.figures) || [];
+    if (!oldFigs.length) { flash("Ce cours n'a pas de figures à récupérer."); return; }
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = "application/pdf,.pdf";
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      flash("Lecture du PDF…");
+      try {
+        const res = await window.extractFromPDF(file, (s) => setToast(s));
+        const newFigs = (res && res.images) || [];
+        if (!newFigs.length) { flash("Aucune image trouvée dans ce PDF."); return; }
+        const used = new Set(), uploads = [];
+        oldFigs.forEach(of => {
+          let best = -1, bestScore = Infinity;
+          newFigs.forEach((nf, i) => {
+            if (used.has(i) || !nf.url || nf.page !== of.page) return;
+            const score = Math.abs((nf.w || 0) - (of.w || 0)) + Math.abs((nf.h || 0) - (of.h || 0));
+            if (score < bestScore) { bestScore = score; best = i; }
+          });
+          if (best >= 0) { used.add(best); uploads.push({ id: of.id, url: newFigs[best].url }); if (window.registerFigImage) window.registerFigImage(of.id, newFigs[best].url); }
+        });
+        if (!uploads.length) { flash("Aucune image n'a pu être associée — est-ce bien le PDF de ce cours ?"); return; }
+        await uploadFigures(uploads);
+        setChapters(prev => prev.slice());   // re-render so figures pick up the recovered images
+        flash(uploads.length + "/" + oldFigs.length + " image" + (oldFigs.length > 1 ? "s" : "") + " récupérée" + (uploads.length > 1 ? "s" : "") + " ✓");
+      } catch (e) { flash("Échec : " + ((e && e.message) || e)); }
+    };
+    input.click();
+  }
+
   function openCourse(id, t) { setCurrentId(id); setHome(false); setTab(t || "learn"); }
   function newCourse() { setHome(true); setTab("learn"); }
 
@@ -825,7 +860,7 @@ function App() {
         )}
         <main className="content-inner">
           {tab === "learn" && <LearnTab chapters={chapters} current={currentView} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} onTranslate={translateChapter} onSetDisplayLang={setChapterLang} />}
-          {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} />}
+          {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} onRecoverImages={recoverImages} />}
           {tab === "quiz" && <QuizTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} />}
           {tab === "cards" && <FlashTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}
           {tab === "plan" && <PlanTab chapters={chapters} planDays={planDays} />}

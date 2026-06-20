@@ -20,7 +20,7 @@ function LibStat({ n, label, color }) {
   );
 }
 
-function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload }) {
+function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onRecoverImages }) {
   const [confirm, setConfirm] = useState(false);
   const pct = libPct(ch);
   const done = ch.sections.filter(s => s.status === "done").length;
@@ -67,6 +67,8 @@ function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload }) {
           {ch.quiz && ch.quiz.length > 0 && <button className="btn btn-sm" onClick={() => onOpen(ch.id, "quiz")}><BIcon name="quiz" size={14} /></button>}
           {ch.cards && ch.cards.length > 0 && <button className="btn btn-sm" onClick={() => onOpen(ch.id, "cards")}><BIcon name="cards" size={14} /></button>}
           {done > 0 && <button className="btn btn-sm" onClick={() => onDownload(ch.id)} title="Télécharger (HTML / PDF)"><BIcon name="download" size={14} /></button>}
+          {(ch.figures || []).length > 0 && onRecoverImages &&
+            <button className="btn btn-sm" onClick={() => onRecoverImages(ch)} title="Récupérer les images du cours depuis le PDF d'origine"><BIcon name="image" size={14} /></button>}
           <span className="spacer" />
           <button className="btn btn-sm btn-ghost" onClick={() => onToggleMastered(ch.id)} title={ch.mastered ? "Retirer « maîtrisé »" : "Marquer comme maîtrisé"}
             style={ch.mastered ? { color: "var(--good)" } : {}}><BIcon name="target" size={14} /></button>
@@ -79,7 +81,7 @@ function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload }) {
   );
 }
 
-function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, onNew }) {
+function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, onNew, onRecoverImages }) {
   if (!chapters.length) {
     return (
       <div>
@@ -123,7 +125,7 @@ function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, 
       {/* course grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "var(--space-5)" }}>
         {chapters.slice().reverse().map(ch => (
-          <CourseCard key={ch.id} ch={ch} onOpen={onOpen} onToggleMastered={onToggleMastered} onDelete={onDelete} onDownload={onDownload} />
+          <CourseCard key={ch.id} ch={ch} onOpen={onOpen} onToggleMastered={onToggleMastered} onDelete={onDelete} onDownload={onDownload} onRecoverImages={onRecoverImages} />
         ))}
       </div>
     </div>

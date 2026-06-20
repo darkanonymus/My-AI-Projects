@@ -387,7 +387,9 @@ function ImageBlock({ id, caption, blockIndex }) {
   const [failed, setFailed] = React.useState(false);
   const local = HML_FIGS[id];
   const src = local || (id ? "/api/figures/" + encodeURIComponent(id) : null);
-  if (!src || failed) return <div className="figure figure-fallback" data-block-index={blockIndex}><span className="muted mono" style={{ fontSize: 12 }}>figure du cours indisponible</span></div>;
+  // an in-memory image (e.g. just recovered/extracted) is trusted; only the
+  // server-endpoint path can "fail" (404) → fall back to the placeholder.
+  if (!src || (failed && !local)) return <div className="figure figure-fallback" data-block-index={blockIndex}><span className="muted mono" style={{ fontSize: 12 }}>figure du cours indisponible</span></div>;
   return (
     <figure className="figure course-fig" data-block-index={blockIndex} style={{ textAlign: "center" }}>
       <img src={src} alt={caption || "Figure du cours"} loading="lazy" onError={() => setFailed(true)} style={{ maxWidth: "100%", maxHeight: 460, borderRadius: 7, display: "block", margin: "0 auto" }} />
