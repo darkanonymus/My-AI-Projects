@@ -693,6 +693,11 @@ button { font-family: inherit; cursor: pointer; }
 .lang-opt:hover { background: var(--surface-2); color: var(--ink); }
 .lang-opt[data-active="true"] { background: var(--accent-soft); color: var(--accent-deep); }
 .lang-opt .lang-tag { font-size: 11px; color: var(--ink-faint); font-family: var(--font-mono, monospace); }
+/* mobile: the lesson buttons wrap, so anchor the menu to the LEFT and clamp to
+   the viewport so it never spills off-screen (was cut off at left: -71px). */
+@media (max-width: 880px) {
+  .lang-menu { left: 0; right: auto; width: min(220px, calc(100vw - 32px)); }
+}
 @media (max-width: 880px) { .read-voice { max-width: 92px; } .read-rate { min-width: 40px; } }
 
 /* voice Q&A (Phase A) */

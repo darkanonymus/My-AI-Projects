@@ -124,6 +124,7 @@ function AuthModal({ open, onClose, onAuthed }) {
   const [password, setPassword] = uS("");
   const [busy, setBusy] = uS(false);
   const [err, setErr] = uS("");
+  const [showPw, setShowPw] = uS(false);
   if (!open) return null;
 
   async function submit(e) {
@@ -164,8 +165,15 @@ function AuthModal({ open, onClose, onAuthed }) {
             <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)}
               placeholder="toi@exemple.com" className="field" required />
             <label className="field-label" style={{ marginTop: "var(--space-3)" }}>Mot de passe</label>
-            <input type="password" autoComplete={isReg ? "new-password" : "current-password"} value={password}
-              onChange={e => setPassword(e.target.value)} placeholder={isReg ? "6 caractères minimum" : "••••••••"} className="field" required />
+            <div style={{ position: "relative" }}>
+              <input type={showPw ? "text" : "password"} autoComplete={isReg ? "new-password" : "current-password"} value={password}
+                onChange={e => setPassword(e.target.value)} placeholder={isReg ? "6 caractères minimum" : "••••••••"} className="field" style={{ width: "100%", paddingRight: 42 }} required />
+              <button type="button" className="icon-btn" onClick={() => setShowPw(s => !s)}
+                aria-label={showPw ? "Masquer le mot de passe" : "Afficher le mot de passe"} title={showPw ? "Masquer" : "Afficher"}
+                style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)" }}>
+                <AIcon name={showPw ? "eyeoff" : "eye"} size={16} />
+              </button>
+            </div>
             {err && <div className="hint hint--warn" style={{ marginTop: "var(--space-3)" }}>{err}</div>}
             <button type="submit" className="btn btn-primary" disabled={busy} style={{ width: "100%", justifyContent: "center", marginTop: "var(--space-4)" }}>
               {busy ? <Spinner size={15} /> : <AIcon name={isReg ? "plusbig" : "target"} size={15} />}
