@@ -12,6 +12,7 @@ or simply:
 """
 
 from __future__ import annotations
+import base64
 import hashlib
 import hmac
 import json as json_module
@@ -69,6 +70,26 @@ def _db_set(key: str, value: str) -> None:
         (key, value),
     )
     _db.commit()
+
+# Original course images (extracted from PDFs) live in their OWN table — NOT in
+# the state blob — so the state stays small while the images persist and sync
+# across devices. `owner` mirrors the state key ("app" or "app:<uid>").
+_db.execute("""
+    CREATE TABLE IF NOT EXISTS figures (
+        owner   TEXT NOT NULL,
+        fig_id  TEXT NOT NULL,
+        data    TEXT NOT NULL,
+        ts      TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (owner, fig_id)
+    )
+""")
+_db.commit()
+
+def _fig_get(owner: str, fig_id: str) -> str | None:
+    row = _db.execute(
+        "SELECT data FROM figures WHERE owner = ? AND fig_id = ?", (owner, fig_id)
+    ).fetchone()
+    return row[0] if row else None
 
 # ---------------------------------------------------------------------------
 # Accounts — optional login so courses follow you across devices.
@@ -312,6 +333,76 @@ async def save_state(body: StateBody, request: Request):
         clean = body.data
     await run_in_threadpool(lambda: _db_set(_state_key(uid), clean))
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Course figures — the base64 images extracted from PDFs, stored out-of-band
+# (see the `figures` table). Uploaded once at import; served as real images.
+# ---------------------------------------------------------------------------
+class FiguresBody(BaseModel):
+    figures: list[dict]   # [{id, url}] — url is a data: URI
+
+
+@app.post("/api/figures")
+async def save_figures(body: FiguresBody, request: Request):
+    owner = _state_key(_current_uid(request))
+
+    def _save() -> int:
+        n = 0
+        for f in body.figures or []:
+            fid = str((f or {}).get("id") or "").strip()
+            url = (f or {}).get("url")
+            if fid and isinstance(url, str) and url.startswith("data:"):
+                _db.execute(
+                    "INSERT OR REPLACE INTO figures (owner, fig_id, data, ts) "
+                    "VALUES (?, ?, ?, datetime('now'))",
+                    (owner, fid, url),
+                )
+                n += 1
+        _db.commit()
+        return n
+
+    saved = await run_in_threadpool(_save)
+    return {"ok": True, "saved": saved}
+
+
+@app.get("/api/figures")
+async def list_figures(request: Request):
+    """Ids the current user has images for (logged-in users also see the global
+    set, mirroring how state seeds from the legacy global slot)."""
+    uid = _current_uid(request)
+    owner = _state_key(uid)
+
+    def _ids():
+        ids = {r[0] for r in _db.execute("SELECT fig_id FROM figures WHERE owner = ?", (owner,)).fetchall()}
+        if uid:
+            ids.update(r[0] for r in _db.execute("SELECT fig_id FROM figures WHERE owner = 'app'").fetchall())
+        return sorted(ids)
+
+    return {"ids": await run_in_threadpool(_ids)}
+
+
+@app.get("/api/figures/{fig_id}")
+async def get_figure(fig_id: str, request: Request):
+    uid = _current_uid(request)
+
+    def _lookup():
+        d = _fig_get(_state_key(uid), fig_id)
+        if d is None and uid:   # fall back to the global slot (seed parity)
+            d = _fig_get("app", fig_id)
+        return d
+
+    data_uri = await run_in_threadpool(_lookup)
+    if not data_uri:
+        raise HTTPException(status_code=404, detail="Figure introuvable.")
+    try:
+        header, b64 = data_uri.split(",", 1)
+        ctype = header.split(":", 1)[1].split(";", 1)[0] or "image/jpeg"
+        raw = base64.b64decode(b64)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Figure illisible.")
+    return Response(content=raw, media_type=ctype,
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 _MAX_UPLOAD = 50 * 1024 * 1024   # 50 MB hard limit

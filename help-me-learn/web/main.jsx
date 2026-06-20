@@ -116,6 +116,22 @@ function loadState() {
 }
 const SAVED = loadState();
 
+/* Persist a chapter's ORIGINAL images out-of-band (own server table), so they
+   survive reloads and sync across devices — the state blob deliberately drops
+   the heavy base64. Chunked to keep each request modest. Best-effort. */
+async function uploadFigures(figs) {
+  const all = (figs || []).filter(f => f && f.id && f.url).map(f => ({ id: f.id, url: f.url }));
+  for (let i = 0; i < all.length; i += 8) {
+    try {
+      await fetch("/api/figures", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ figures: all.slice(i, i + 8) }),
+      });
+    } catch (_) { /* offline / not critical — registry still serves this session */ }
+  }
+}
+window.uploadFigures = uploadFigures;
+
 /* Login / create-account modal. On success we reload so the app re-fetches the
    now per-user state from the server (courses follow you across devices). */
 function AuthModal({ open, onClose, onAuthed }) {
@@ -498,6 +514,7 @@ function App() {
     if (!aiReady) { setShowSettings(true); return; }
     const ch = freshChapter(source, fromFile, images);
     (ch.figures || []).forEach(f => { if (f.url && window.registerFigImage) window.registerFigImage(f.id, f.url); });
+    uploadFigures(ch.figures);   // persist images out-of-band (survives reload + syncs across devices)
     setChapters(prev => [...prev, ch]);
     setCurrentId(ch.id);
     setHome(false);

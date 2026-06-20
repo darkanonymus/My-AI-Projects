@@ -378,13 +378,19 @@ function parseImgRef(body) {
   return { id, caption };
 }
 
-/* React component: re-inserts an ORIGINAL figure extracted from the course */
+/* React component: re-inserts an ORIGINAL figure extracted from the course.
+   Source priority: the in-memory registry (freshly extracted, instant) → the
+   server endpoint (/api/figures/<id>, for courses loaded from storage). Falls
+   back to a placeholder only if the image is truly gone (e.g. an old course
+   whose PDF hasn't been re-imported since images moved out of the state blob). */
 function ImageBlock({ id, caption, blockIndex }) {
-  const src = HML_FIGS[id];
-  if (!src) return <div className="figure figure-fallback" data-block-index={blockIndex}><span className="muted mono" style={{ fontSize: 12 }}>figure du cours indisponible</span></div>;
+  const [failed, setFailed] = React.useState(false);
+  const local = HML_FIGS[id];
+  const src = local || (id ? "/api/figures/" + encodeURIComponent(id) : null);
+  if (!src || failed) return <div className="figure figure-fallback" data-block-index={blockIndex}><span className="muted mono" style={{ fontSize: 12 }}>figure du cours indisponible</span></div>;
   return (
     <figure className="figure course-fig" data-block-index={blockIndex} style={{ textAlign: "center" }}>
-      <img src={src} alt={caption || "Figure du cours"} loading="lazy" style={{ maxWidth: "100%", maxHeight: 460, borderRadius: 7, display: "block", margin: "0 auto" }} />
+      <img src={src} alt={caption || "Figure du cours"} loading="lazy" onError={() => setFailed(true)} style={{ maxWidth: "100%", maxHeight: 460, borderRadius: 7, display: "block", margin: "0 auto" }} />
       <figcaption className="muted" style={{ fontSize: 12, marginTop: 7, display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--accent-deep)" }}>Figure du cours</span>
         {caption && <span>· {caption}</span>}
