@@ -68,7 +68,7 @@ function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onReco
           {ch.cards && ch.cards.length > 0 && <button className="btn btn-sm" onClick={() => onOpen(ch.id, "cards")}><BIcon name="cards" size={14} /></button>}
           {done > 0 && <button className="btn btn-sm" onClick={() => onDownload(ch.id)} title="Télécharger (HTML / PDF)"><BIcon name="download" size={14} /></button>}
           {(ch.figures || []).length > 0 && onRecoverImages &&
-            <button className="btn btn-sm" onClick={() => onRecoverImages(ch)} title="Récupérer les images du cours depuis le PDF d'origine"><BIcon name="image" size={14} /></button>}
+            <button className="btn btn-sm" onClick={() => onRecoverImages(ch)} title="Récupérer les images du cours depuis le PDF ou le HTML téléchargé"><BIcon name="image" size={14} /></button>}
           <span className="spacer" />
           <button className="btn btn-sm btn-ghost" onClick={() => onToggleMastered(ch.id)} title={ch.mastered ? "Retirer « maîtrisé »" : "Marquer comme maîtrisé"}
             style={ch.mastered ? { color: "var(--good)" } : {}}><BIcon name="target" size={14} /></button>
