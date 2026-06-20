@@ -687,14 +687,57 @@ function App() {
   /* Recover a course's ORIGINAL images by re-importing its PDF: re-extract,
      remap each image to the existing figure id (same page, nearest size) and
      upload it — so the course + its progress are preserved, no regeneration. */
+  /* The figure ids a course references in its prose, in reading order — mirrors
+     how the renderer / HTML export walk [img:fN] lines and ```img``` fences. */
+  function orderedFigIds(ch) {
+    const ids = [];
+    (ch.sections || []).forEach(s => {
+      const lines = (s.contenu || "").replace(/\r/g, "").split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const il = lines[i].match(/^\s*\[img:\s*(f\d+)\s*\]/i);
+        if (il) { ids.push(il[1]); continue; }
+        if (lines[i].trim().startsWith("```")) {
+          const lang = lines[i].trim().slice(3).trim().toLowerCase();
+          const buf = []; i++;
+          while (i < lines.length && !lines[i].trim().startsWith("```")) { buf.push(lines[i]); i++; }
+          if (lang === "img") { const r = window.parseImgRef(buf.join("\n")); if (r && r.id) ids.push(r.id); }
+        }
+      }
+    });
+    return ids;
+  }
+
+  /* Recover images from a previously-downloaded HTML export: it already embeds
+     the original images in prose order, so zip them to the course's ordered
+     figure ids. More reliable than PDF re-extraction (exact originals, no
+     re-detection) — and works when the source PDF is gone. */
+  async function recoverFromHTML(ch, oldFigs, file) {
+    flash("Lecture du HTML…");
+    const html = await file.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    let imgs = [...doc.querySelectorAll("figure.course-fig img")].map(im => im.getAttribute("src"));
+    if (!imgs.length) imgs = [...doc.querySelectorAll('img[src^="data:image"]')].map(im => im.getAttribute("src"));
+    imgs = imgs.filter(s => s && s.startsWith("data:image"));
+    const ids = orderedFigIds(ch);
+    const n = Math.min(ids.length, imgs.length);
+    if (!n) { flash("Aucune image intégrée trouvée dans ce HTML."); return; }
+    const uploads = [];
+    for (let i = 0; i < n; i++) { uploads.push({ id: ids[i], url: imgs[i] }); if (window.registerFigImage) window.registerFigImage(ids[i], imgs[i]); }
+    await uploadFigures(uploads);
+    setChapters(prev => prev.slice());   // re-render so figures pick up the recovered images
+    const warn = (imgs.length !== ids.length) ? " · " + imgs.length + " img/" + ids.length + " réf — vérifie" : "";
+    flash(uploads.length + "/" + oldFigs.length + " image" + (oldFigs.length > 1 ? "s" : "") + " récupérée" + (uploads.length > 1 ? "s" : "") + " ✓" + warn);
+  }
+
   function recoverImages(ch) {
     const oldFigs = (ch && ch.figures) || [];
     if (!oldFigs.length) { flash("Ce cours n'a pas de figures à récupérer."); return; }
     const input = document.createElement("input");
-    input.type = "file"; input.accept = "application/pdf,.pdf";
+    input.type = "file"; input.accept = "application/pdf,.pdf,text/html,.html,.htm";
     input.onchange = async () => {
       const file = input.files && input.files[0];
       if (!file) return;
+      if (/\.html?$/i.test(file.name || "") || file.type === "text/html") { try { await recoverFromHTML(ch, oldFigs, file); } catch (e) { flash("Echec HTML : " + ((e && e.message) || e)); } return; }
       flash("Lecture du PDF…");
       try {
         const res = await window.extractFromPDF(file, (s) => setToast(s));
