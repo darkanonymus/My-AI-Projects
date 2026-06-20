@@ -209,6 +209,8 @@ function App() {
   const [diagErrors, setDiagErrors] = uS(0);
   const [user, setUser] = uS(null);          // { email } when logged in, else null
   const [showAuth, setShowAuth] = uS(false);
+  const [acctOpen, setAcctOpen] = uS(false); // account dropdown (email + logout)
+  function onAccountClick() { if (user) setAcctOpen(o => !o); else setShowAuth(true); }
   uE(() => { fetch("/api/auth/me").then(r => r.json()).then(setUser).catch(() => {}); }, []);
   async function logout() { try { await fetch("/api/auth/logout", { method: "POST" }); } catch (_) {} window.location.reload(); }
   uE(() => {
@@ -724,14 +726,24 @@ function App() {
             {window.ui("diagBtn")}
             {diagErrors > 0 && <span className="nav-badge" style={{ marginLeft: "auto", background: "var(--bad)", color: "#fff" }}>{diagErrors}</span>}
           </button>
-          <button className="theme-btn" onClick={() => user ? logout() : setShowAuth(true)}
-            title={user ? "Se déconnecter (" + user.email + ")" : "Se connecter pour synchroniser tes cours"}>
-            <AIcon name="user" size={15} />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user ? user.email : "Se connecter"}
-            </span>
-            {user && <AIcon name="x" size={13} style={{ marginLeft: "auto", opacity: 0.6 }} />}
-          </button>
+          <div style={{ position: "relative" }}>
+            <button className="theme-btn" onClick={onAccountClick} style={{ width: "100%" }}
+              title={user ? "Compte" : "Se connecter pour synchroniser tes cours"}>
+              <AIcon name="user" size={15} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {user ? user.email : "Se connecter"}
+              </span>
+              {user && <AIcon name="chevrondown" size={13} style={{ marginLeft: "auto", opacity: 0.6 }} />}
+            </button>
+            {user && acctOpen && (
+              <div className="acct-pop acct-pop--up">
+                <div className="acct-pop-head">Connecté en tant que<br /><span className="mono">{user.email}</span></div>
+                <button className="lang-opt" onClick={() => { setAcctOpen(false); logout(); }}>
+                  <AIcon name="x" size={14} /> Se déconnecter
+                </button>
+              </div>
+            )}
+          </div>
           <button className="theme-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
             <AIcon name={theme === "dark" ? "sun" : "moon"} size={16} />
             {theme === "dark" ? window.ui("themeDark") : window.ui("themeLight")}
@@ -767,11 +779,21 @@ function App() {
             <AIcon name="warn" size={17} />
             {diagErrors > 0 && <span style={{ position: "absolute", top: 4, right: 4, minWidth: 14, height: 14, padding: "0 3px", borderRadius: 99, background: "var(--bad)", color: "#fff", fontSize: 9, lineHeight: "14px", textAlign: "center" }}>{diagErrors}</span>}
           </button>
-          <button className="icon-btn" onClick={() => user ? logout() : setShowAuth(true)} style={{ position: "relative" }}
-            aria-label={user ? "Compte" : "Se connecter"} title={user ? user.email : "Se connecter"}>
-            <AIcon name="user" size={17} />
-            {user && <span style={{ position: "absolute", top: 6, right: 6, width: 8, height: 8, borderRadius: 99, background: "var(--good)", border: "1.5px solid var(--surface)" }} />}
-          </button>
+          <div style={{ position: "relative" }}>
+            <button className="icon-btn" onClick={onAccountClick} style={{ position: "relative" }}
+              aria-label={user ? "Compte" : "Se connecter"} title={user ? user.email : "Se connecter"}>
+              <AIcon name="user" size={17} />
+              {user && <span style={{ position: "absolute", top: 6, right: 6, width: 8, height: 8, borderRadius: 99, background: "var(--good)", border: "1.5px solid var(--surface)" }} />}
+            </button>
+            {user && acctOpen && (
+              <div className="acct-pop acct-pop--down">
+                <div className="acct-pop-head">Connecté en tant que<br /><span className="mono">{user.email}</span></div>
+                <button className="lang-opt" onClick={() => { setAcctOpen(false); logout(); }}>
+                  <AIcon name="x" size={14} /> Se déconnecter
+                </button>
+              </div>
+            )}
+          </div>
           <button className="icon-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} aria-label="Thème">
             <AIcon name={theme === "dark" ? "sun" : "moon"} size={17} />
           </button>

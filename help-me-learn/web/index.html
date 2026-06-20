@@ -698,6 +698,20 @@ button { font-family: inherit; cursor: pointer; }
 @media (max-width: 880px) {
   .lang-menu { left: 0; right: auto; width: min(220px, calc(100vw - 32px)); }
 }
+
+/* account menu (email + logout) — same look as .lang-menu */
+.acct-pop {
+  position: absolute; z-index: 40; width: min(240px, calc(100vw - 32px));
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px;
+  box-shadow: var(--shadow-lg); padding: var(--space-1);
+}
+.acct-pop--up   { bottom: calc(100% + 8px); left: 0; }
+.acct-pop--down { top: calc(100% + 8px); right: 0; }
+.acct-pop-head {
+  padding: 8px 10px; font-size: var(--fs-small); color: var(--ink-faint); line-height: 1.5;
+  border-bottom: 1px solid var(--line); margin-bottom: var(--space-1);
+}
+.acct-pop-head .mono { color: var(--ink); font-family: var(--font-mono, monospace); font-size: 12px; word-break: break-all; }
 @media (max-width: 880px) { .read-voice { max-width: 92px; } .read-rate { min-width: 40px; } }
 
 /* voice Q&A (Phase A) */
