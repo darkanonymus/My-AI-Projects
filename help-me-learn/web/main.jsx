@@ -116,6 +116,72 @@ function loadState() {
 }
 const SAVED = loadState();
 
+/* Login / create-account modal. On success we reload so the app re-fetches the
+   now per-user state from the server (courses follow you across devices). */
+function AuthModal({ open, onClose, onAuthed }) {
+  const [mode, setMode] = uS("login");   // "login" | "register"
+  const [email, setEmail] = uS("");
+  const [password, setPassword] = uS("");
+  const [busy, setBusy] = uS(false);
+  const [err, setErr] = uS("");
+  if (!open) return null;
+
+  async function submit(e) {
+    if (e) e.preventDefault();
+    setErr(""); setBusy(true);
+    try {
+      const r = await fetch("/api/auth/" + mode, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || "Échec de la connexion.");
+      if (onAuthed) onAuthed(data);
+      window.location.reload();   // refetch per-user state
+    } catch (e2) {
+      setErr((e2 && e2.message) || String(e2));
+      setBusy(false);
+    }
+  }
+
+  const isReg = mode === "register";
+  return (
+    <div onClick={onClose} className="modal-overlay">
+      <div className="card fade-in modal-panel" onClick={e => e.stopPropagation()} style={{ width: "min(440px, 100%)" }}>
+        <div className="accent-bar" />
+        <div className="modal-body">
+          <div className="modal-head">
+            <div className="tile-icon"><AIcon name="target" size={20} /></div>
+            <h2>{isReg ? "Créer un compte" : "Se connecter"}</h2>
+            <span className="spacer" />
+            <button className="icon-btn" onClick={onClose} aria-label="Fermer"><AIcon name="x" size={18} /></button>
+          </div>
+          <p className="soft" style={{ fontSize: "var(--fs-small)", lineHeight: 1.6, margin: "var(--space-1) 0 var(--space-4)" }}>
+            Connecte-toi pour retrouver tes cours sur tous tes appareils.
+          </p>
+          <form onSubmit={submit}>
+            <label className="field-label">Email</label>
+            <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="toi@exemple.com" className="field" required />
+            <label className="field-label" style={{ marginTop: "var(--space-3)" }}>Mot de passe</label>
+            <input type="password" autoComplete={isReg ? "new-password" : "current-password"} value={password}
+              onChange={e => setPassword(e.target.value)} placeholder={isReg ? "6 caractères minimum" : "••••••••"} className="field" required />
+            {err && <div className="hint hint--warn" style={{ marginTop: "var(--space-3)" }}>{err}</div>}
+            <button type="submit" className="btn btn-primary" disabled={busy} style={{ width: "100%", justifyContent: "center", marginTop: "var(--space-4)" }}>
+              {busy ? <Spinner size={15} /> : <AIcon name={isReg ? "plusbig" : "target"} size={15} />}
+              {isReg ? "Créer mon compte" : "Se connecter"}
+            </button>
+          </form>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setErr(""); setMode(isReg ? "login" : "register"); }}
+            style={{ width: "100%", justifyContent: "center", marginTop: "var(--space-3)" }}>
+            {isReg ? "J'ai déjà un compte — me connecter" : "Pas de compte ? En créer un"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [theme, setTheme] = uS((SAVED && SAVED.theme) || "dark");
   const [tab, setTab] = uS(SAVED && SAVED.chapters && SAVED.chapters.length ? "library" : "learn");
@@ -133,6 +199,10 @@ function App() {
   }
   const [showDiag, setShowDiag] = uS(false);
   const [diagErrors, setDiagErrors] = uS(0);
+  const [user, setUser] = uS(null);          // { email } when logged in, else null
+  const [showAuth, setShowAuth] = uS(false);
+  uE(() => { fetch("/api/auth/me").then(r => r.json()).then(setUser).catch(() => {}); }, []);
+  async function logout() { try { await fetch("/api/auth/logout", { method: "POST" }); } catch (_) {} window.location.reload(); }
   uE(() => {
     if (!window.HMLog) return;
     const upd = () => setDiagErrors(window.HMLog.errorCount());
@@ -646,6 +716,14 @@ function App() {
             {window.ui("diagBtn")}
             {diagErrors > 0 && <span className="nav-badge" style={{ marginLeft: "auto", background: "var(--bad)", color: "#fff" }}>{diagErrors}</span>}
           </button>
+          <button className="theme-btn" onClick={() => user ? logout() : setShowAuth(true)}
+            title={user ? "Se déconnecter (" + user.email + ")" : "Se connecter pour synchroniser tes cours"}>
+            <AIcon name="user" size={15} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user ? user.email : "Se connecter"}
+            </span>
+            {user && <AIcon name="x" size={13} style={{ marginLeft: "auto", opacity: 0.6 }} />}
+          </button>
           <button className="theme-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
             <AIcon name={theme === "dark" ? "sun" : "moon"} size={16} />
             {theme === "dark" ? window.ui("themeDark") : window.ui("themeLight")}
@@ -681,6 +759,11 @@ function App() {
             <AIcon name="warn" size={17} />
             {diagErrors > 0 && <span style={{ position: "absolute", top: 4, right: 4, minWidth: 14, height: 14, padding: "0 3px", borderRadius: 99, background: "var(--bad)", color: "#fff", fontSize: 9, lineHeight: "14px", textAlign: "center" }}>{diagErrors}</span>}
           </button>
+          <button className="icon-btn" onClick={() => user ? logout() : setShowAuth(true)} style={{ position: "relative" }}
+            aria-label={user ? "Compte" : "Se connecter"} title={user ? user.email : "Se connecter"}>
+            <AIcon name="user" size={17} />
+            {user && <span style={{ position: "absolute", top: 6, right: 6, width: 8, height: 8, borderRadius: 99, background: "var(--good)", border: "1.5px solid var(--surface)" }} />}
+          </button>
           <button className="icon-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} aria-label="Thème">
             <AIcon name={theme === "dark" ? "sun" : "moon"} size={17} />
           </button>
@@ -709,6 +792,9 @@ function App() {
 
       {/* ---------- DIAGNOSTICS MODAL ---------- */}
       <window.DiagnosticsModal open={showDiag} onClose={() => setShowDiag(false)} />
+
+      {/* ---------- AUTH MODAL ---------- */}
+      <AuthModal open={showAuth} onClose={() => setShowAuth(false)} onAuthed={setUser} />
 
       {/* ---------- TOAST ---------- */}
       {toast && (

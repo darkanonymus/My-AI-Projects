@@ -12,9 +12,12 @@ or simply:
 """
 
 from __future__ import annotations
+import hashlib
+import hmac
 import json as json_module
 import os
 import pathlib
+import secrets
 import sqlite3
 
 # Load .env BEFORE importing llm, so the API key / model are captured on import.
@@ -25,7 +28,7 @@ except Exception:  # noqa: BLE001
     pass
 
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -66,6 +69,73 @@ def _db_set(key: str, value: str) -> None:
         (key, value),
     )
     _db.commit()
+
+# ---------------------------------------------------------------------------
+# Accounts — optional login so courses follow you across devices.
+# Logged out = the legacy shared/global state (unchanged). Logged in = your own
+# per-user state, seeded once from the global state so existing courses carry over.
+# ---------------------------------------------------------------------------
+_db.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        email   TEXT UNIQUE NOT NULL,
+        pwhash  TEXT NOT NULL,
+        created TEXT DEFAULT (datetime('now'))
+    )
+""")
+_db.execute("""
+    CREATE TABLE IF NOT EXISTS sessions (
+        token   TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        created TEXT DEFAULT (datetime('now'))
+    )
+""")
+_db.commit()
+
+COOKIE = "hml_session"
+_PBKDF_ITERS = 200_000
+
+def _hash_pw(password: str, salt: str | None = None) -> str:
+    salt = salt or secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), _PBKDF_ITERS)
+    return f"{salt}${dk.hex()}"
+
+def _verify_pw(password: str, stored: str) -> bool:
+    try:
+        salt, _ = stored.split("$", 1)
+    except (ValueError, AttributeError):
+        return False
+    return hmac.compare_digest(_hash_pw(password, salt), stored)
+
+def _user_by_email(email: str):
+    return _db.execute("SELECT id, email, pwhash FROM users WHERE email = ?", (email,)).fetchone()
+
+def _create_user(email: str, password: str) -> int:
+    cur = _db.execute("INSERT INTO users (email, pwhash) VALUES (?, ?)", (email, _hash_pw(password)))
+    _db.commit()
+    return cur.lastrowid
+
+def _new_session(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    _db.execute("INSERT INTO sessions (token, user_id) VALUES (?, ?)", (token, user_id))
+    _db.commit()
+    return token
+
+def _uid_for_token(token: str | None):
+    if not token:
+        return None
+    row = _db.execute("SELECT user_id FROM sessions WHERE token = ?", (token,)).fetchone()
+    return row[0] if row else None
+
+def _current_uid(request: Request):
+    return _uid_for_token(request.cookies.get(COOKIE))
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(COOKIE, token, httponly=True, samesite="lax",
+                        max_age=60 * 60 * 24 * 60, path="/")
+
+def _state_key(uid) -> str:
+    return f"app:{uid}" if uid else "app"
 
 app = FastAPI(title="Help me Learn — local")
 
@@ -164,20 +234,72 @@ async def api_stt(audio: UploadFile = File(...), lang: str = "fr"):
     return {"text": text}
 
 
+class AuthBody(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/auth/register")
+async def auth_register(body: AuthBody, response: Response):
+    email = (body.email or "").strip().lower()
+    if "@" not in email or "." not in email or len(email) < 5:
+        raise HTTPException(status_code=400, detail="Email invalide.")
+    if len(body.password or "") < 6:
+        raise HTTPException(status_code=400, detail="Mot de passe trop court (6 caractères minimum).")
+    if await run_in_threadpool(_user_by_email, email):
+        raise HTTPException(status_code=409, detail="Un compte existe déjà avec cet email.")
+    uid = await run_in_threadpool(_create_user, email, body.password)
+    _set_session_cookie(response, _new_session(uid))
+    return {"email": email}
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: AuthBody, response: Response):
+    row = await run_in_threadpool(_user_by_email, (body.email or "").strip().lower())
+    if not row or not _verify_pw(body.password or "", row[2]):
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect.")
+    _set_session_cookie(response, _new_session(row[0]))
+    return {"email": row[1]}
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request, response: Response):
+    tok = request.cookies.get(COOKIE)
+    if tok:
+        _db.execute("DELETE FROM sessions WHERE token = ?", (tok,))
+        _db.commit()
+    response.delete_cookie(COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request):
+    uid = _current_uid(request)
+    if not uid:
+        return JSONResponse(None)
+    row = _db.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
+    return {"email": row[0]} if row else JSONResponse(None)
+
+
 class StateBody(BaseModel):
     data: str   # full JSON string: {chapters, currentId, theme}
 
 
 @app.get("/api/state")
-async def get_state():
-    raw = await run_in_threadpool(lambda: _db_get("app"))
+async def get_state(request: Request):
+    uid = _current_uid(request)
+    raw = await run_in_threadpool(lambda: _db_get(_state_key(uid)))
+    if raw is None and uid:
+        # first time for this user → seed from the legacy global state (read-only)
+        raw = await run_in_threadpool(lambda: _db_get("app"))
     if raw is None:
         return JSONResponse(None)
     return JSONResponse(json_module.loads(raw))
 
 
 @app.post("/api/state")
-async def save_state(body: StateBody):
+async def save_state(body: StateBody, request: Request):
+    uid = _current_uid(request)
     # Strip base64 image blobs before persisting — keeps DB small,
     # text content (lessons, quiz, flashcards) is fully preserved.
     try:
@@ -188,7 +310,7 @@ async def save_state(body: StateBody):
         clean = json_module.dumps(state, ensure_ascii=False)
     except Exception:
         clean = body.data
-    await run_in_threadpool(lambda: _db_set("app", clean))
+    await run_in_threadpool(lambda: _db_set(_state_key(uid), clean))
     return {"ok": True}
 
 
