@@ -411,10 +411,11 @@ class StateBody(BaseModel):
 @app.get("/api/state")
 async def get_state(request: Request):
     uid = _current_uid(request)
+    if not uid:
+        # Logged out → no server state. Courses are private to an account, so a
+        # public visitor (or a not-yet-signed-in device) sees nothing.
+        return JSONResponse(None)
     raw = await run_in_threadpool(lambda: _db_get(_state_key(uid)))
-    if raw is None and uid:
-        # first time for this user → seed from the legacy global state (read-only)
-        raw = await run_in_threadpool(lambda: _db_get("app"))
     if raw is None:
         return JSONResponse(None)
     return JSONResponse(json_module.loads(raw))
@@ -423,6 +424,8 @@ async def get_state(request: Request):
 @app.post("/api/state")
 async def save_state(body: StateBody, request: Request):
     uid = _current_uid(request)
+    if not uid:
+        return {"ok": True}   # anonymous state stays local-only — never written to a shared bucket
     # Strip base64 image blobs before persisting — keeps DB small,
     # text content (lessons, quiz, flashcards) is fully preserved.
     try:
@@ -448,7 +451,10 @@ class FiguresBody(BaseModel):
 
 @app.post("/api/figures")
 async def save_figures(body: FiguresBody, request: Request):
-    owner = _state_key(_current_uid(request))
+    uid = _current_uid(request)
+    if not uid:
+        return {"ok": True, "saved": 0}   # logged out → kept local-only, like state
+    owner = _state_key(uid)
     course = (body.courseId or "").strip()
     if not course:
         raise HTTPException(status_code=400, detail="courseId requis.")
