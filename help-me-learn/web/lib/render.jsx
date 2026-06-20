@@ -44,7 +44,7 @@ function renderInline(text, keyBase) {
 }
 
 /* block parser */
-function renderMarkdown(src, injectAfter, hiddenRanges, onRestoreHidden) {
+function renderMarkdown(src, injectAfter, hiddenRanges, onRestoreHidden, courseId) {
   if (!src) return null;
   // normalize, then handle complements as blocks
   const blocks = [];
@@ -57,7 +57,7 @@ function renderMarkdown(src, injectAfter, hiddenRanges, onRestoreHidden) {
     if (part.startsWith("[[C]]")) {
       const inner = part.replace(/^\[\[C\]\]/, "").replace(/\[\[\/C\]\]$/, "").trim();
       const myKey = bkey++;
-      const innerBlocks = renderBlocks(inner, "cmp" + bkey, blockIndex, injectAfter, hiddenRanges, onRestoreHidden);
+      const innerBlocks = renderBlocks(inner, "cmp" + bkey, blockIndex, injectAfter, hiddenRanges, onRestoreHidden, courseId);
       blockIndex += innerBlocks.length;
       blocks.push(
         <div className="complement" key={"cmp" + myKey}>
@@ -67,7 +67,7 @@ function renderMarkdown(src, injectAfter, hiddenRanges, onRestoreHidden) {
       );
     } else {
       const myKey = bkey++;
-      const segBlocks = renderBlocks(part, "b" + bkey, blockIndex, injectAfter, hiddenRanges, onRestoreHidden);
+      const segBlocks = renderBlocks(part, "b" + bkey, blockIndex, injectAfter, hiddenRanges, onRestoreHidden, courseId);
       blockIndex += segBlocks.length;
       blocks.push(<React.Fragment key={"b" + myKey}>{segBlocks}</React.Fragment>);
     }
@@ -80,7 +80,7 @@ function renderMarkdown(src, injectAfter, hiddenRanges, onRestoreHidden) {
    hiddenRanges — optional array of { id, fromBlock, toBlock }; blocks whose
    index falls inside a range are collected and wrapped in a single
    <window.CollapsedPassage> placeholder instead of being rendered inline. */
-function renderBlocks(text, kb, startIndex, injectAfter, hiddenRanges, onRestoreHidden) {
+function renderBlocks(text, kb, startIndex, injectAfter, hiddenRanges, onRestoreHidden, courseId) {
   const out = [];
   const lines = text.replace(/\r/g, "").split("\n");
   let i = 0, k = startIndex || 0;
@@ -110,7 +110,7 @@ function renderBlocks(text, kb, startIndex, injectAfter, hiddenRanges, onRestore
     // standalone original-image reference: [img:fN] optional caption
     {
       const il = line.match(/^\s*\[img:\s*(f\d+)\s*\]\s*(.*)$/i);
-      if (il) { place(<window.ImageBlock key={kb + "imL" + k} id={il[1]} caption={(il[2] || "").trim()} blockIndex={k} />); i++; continue; }
+      if (il) { place(<window.ImageBlock key={kb + "imL" + k} courseId={courseId} id={il[1]} caption={(il[2] || "").trim()} blockIndex={k} />); i++; continue; }
     }
     // fenced block ```fig ... ``` (figure) or plain code
     if (line.trim().startsWith("```")) {
@@ -120,7 +120,7 @@ function renderBlocks(text, kb, startIndex, injectAfter, hiddenRanges, onRestore
       i++; // skip closing fence
       const body = buf.join("\n");
       if (lang === "fig") place(<window.FigureBlock key={kb + "fig" + k} src={body} blockIndex={k} />);
-      else if (lang === "img") { const r = window.parseImgRef(body); place(<window.ImageBlock key={kb + "img" + k} id={r.id} caption={r.caption} blockIndex={k} />); }
+      else if (lang === "img") { const r = window.parseImgRef(body); place(<window.ImageBlock key={kb + "img" + k} courseId={courseId} id={r.id} caption={r.caption} blockIndex={k} />); }
       else place(<pre data-block-index={k} key={kb + "pre" + k} style={{ overflowX: "auto", background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}><code className="mono">{body}</code></pre>);
       continue;
     }

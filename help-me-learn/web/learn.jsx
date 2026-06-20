@@ -243,7 +243,7 @@ function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion
         {status === "error" && <button className="btn btn-sm" onClick={onRetry}><LIcon name="flip" size={13} /> {window.ui("btnRetry")}</button>}
       </div>
       {status === "loading" && !contenu && <ShimmerLines />}
-      {status === "loading" && contenu && <div className="prose">{window.renderMarkdown(contenu)}</div>}
+      {status === "loading" && contenu && <div className="prose">{window.renderMarkdown(contenu, null, null, null, chapter.id)}</div>}
       {status === "error" && (
         <div style={{ fontSize: 14 }}>
           <div className="soft" style={{ marginBottom: err ? 8 : 0 }}>{window.ui("sectionError")}</div>
@@ -254,7 +254,7 @@ function SectionCard({ section, chapter, onRetry, onAddToBank, onDeleteInsertion
           )}
         </div>
       )}
-      {status === "done" && <div className="prose">{window.renderMarkdown(contenu, injectAfter, hiddenRanges, onRestoreHiddenBlock)}</div>}
+      {status === "done" && <div className="prose">{window.renderMarkdown(contenu, injectAfter, hiddenRanges, onRestoreHiddenBlock, chapter.id)}</div>}
     </section>
   );
 }

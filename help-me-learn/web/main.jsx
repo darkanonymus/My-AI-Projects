@@ -108,7 +108,7 @@ function loadState() {
     window.HML_FIGS = window.HML_FIGS || {};
     d.chapters.forEach(c => (c.figures || []).forEach(f => {
       const fm = /f(\d+)/.exec(f.id || ""); if (fm) fmax = Math.max(fmax, +fm[1]);
-      if (f.url && window.registerFigImage) window.registerFigImage(f.id, f.url);
+      if (f.url && window.registerFigImage) window.registerFigImage(c.id, f.id, f.url);
     }));
     window.FIG_SEQ = Math.max(window.FIG_SEQ || 1, fmax + 1);
     return d;
@@ -119,13 +119,14 @@ const SAVED = loadState();
 /* Persist a chapter's ORIGINAL images out-of-band (own server table), so they
    survive reloads and sync across devices — the state blob deliberately drops
    the heavy base64. Chunked to keep each request modest. Best-effort. */
-async function uploadFigures(figs) {
+async function uploadFigures(courseId, figs) {
+  if (!courseId) return;
   const all = (figs || []).filter(f => f && f.id && f.url).map(f => ({ id: f.id, url: f.url }));
   for (let i = 0; i < all.length; i += 8) {
     try {
       await fetch("/api/figures", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ figures: all.slice(i, i + 8) }),
+        body: JSON.stringify({ courseId, figures: all.slice(i, i + 8) }),
       });
     } catch (_) { /* offline / not critical — registry still serves this session */ }
   }
@@ -411,7 +412,7 @@ function App() {
   /* keep the original-image registry in sync so ```img``` blocks resolve */
   uE(() => {
     if (!window.registerFigImage) return;
-    chapters.forEach(c => (c.figures || []).forEach(f => { if (f.url) window.registerFigImage(f.id, f.url); }));
+    chapters.forEach(c => (c.figures || []).forEach(f => { if (f.url) window.registerFigImage(c.id, f.id, f.url); }));
   }, [chapters]);
 
   /* ---- SQLite persistence: sync on mount, save on change ---- */
@@ -622,8 +623,8 @@ function App() {
   async function generateChapter(source, fromFile, images) {
     if (!aiReady) { setShowSettings(true); return; }
     const ch = freshChapter(source, fromFile, images);
-    (ch.figures || []).forEach(f => { if (f.url && window.registerFigImage) window.registerFigImage(f.id, f.url); });
-    uploadFigures(ch.figures);   // persist images out-of-band (survives reload + syncs across devices)
+    (ch.figures || []).forEach(f => { if (f.url && window.registerFigImage) window.registerFigImage(ch.id, f.id, f.url); });
+    uploadFigures(ch.id, ch.figures);   // persist images out-of-band (survives reload + syncs across devices)
     setChapters(prev => [...prev, ch]);
     setCurrentId(ch.id);
     setHome(false);
@@ -840,8 +841,8 @@ function App() {
     const n = Math.min(ids.length, imgs.length);
     if (!n) { flash("Aucune image intégrée trouvée dans ce HTML."); return; }
     const uploads = [];
-    for (let i = 0; i < n; i++) { uploads.push({ id: ids[i], url: imgs[i] }); if (window.registerFigImage) window.registerFigImage(ids[i], imgs[i]); }
-    await uploadFigures(uploads);
+    for (let i = 0; i < n; i++) { uploads.push({ id: ids[i], url: imgs[i] }); if (window.registerFigImage) window.registerFigImage(ch.id, ids[i], imgs[i]); }
+    await uploadFigures(ch.id, uploads);
     setChapters(prev => prev.slice());   // re-render so figures pick up the recovered images
     const warn = (imgs.length !== ids.length) ? " · " + imgs.length + " img/" + ids.length + " réf — vérifie" : "";
     flash(uploads.length + "/" + oldFigs.length + " image" + (oldFigs.length > 1 ? "s" : "") + " récupérée" + (uploads.length > 1 ? "s" : "") + " ✓" + warn);
@@ -869,10 +870,10 @@ function App() {
             const score = Math.abs((nf.w || 0) - (of.w || 0)) + Math.abs((nf.h || 0) - (of.h || 0));
             if (score < bestScore) { bestScore = score; best = i; }
           });
-          if (best >= 0) { used.add(best); uploads.push({ id: of.id, url: newFigs[best].url }); if (window.registerFigImage) window.registerFigImage(of.id, newFigs[best].url); }
+          if (best >= 0) { used.add(best); uploads.push({ id: of.id, url: newFigs[best].url }); if (window.registerFigImage) window.registerFigImage(ch.id, of.id, newFigs[best].url); }
         });
         if (!uploads.length) { flash("Aucune image n'a pu être associée — est-ce bien le PDF de ce cours ?"); return; }
-        await uploadFigures(uploads);
+        await uploadFigures(ch.id, uploads);
         setChapters(prev => prev.slice());   // re-render so figures pick up the recovered images
         flash(uploads.length + "/" + oldFigs.length + " image" + (oldFigs.length > 1 ? "s" : "") + " récupérée" + (uploads.length > 1 ? "s" : "") + " ✓");
       } catch (e) { flash("Échec : " + ((e && e.message) || e)); }

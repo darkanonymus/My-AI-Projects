@@ -364,9 +364,13 @@ function FigureBlock({ src, blockIndex }) {
   return <div className="figure" data-block-index={blockIndex} dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
-/* ---- registry of ORIGINAL course images, keyed by short id (e.g. "f3") ---- */
+/* ---- registry of ORIGINAL course images, keyed by "<courseId>/<figId>".
+   The course id is essential: every course numbers its figures from f1, so a
+   bare "f1" would collide across courses (and one course's image would show
+   for all). ---- */
 const HML_FIGS = (window.HML_FIGS = window.HML_FIGS || {});
-function registerFigImage(id, url) { if (id && url) HML_FIGS[id] = url; }
+function figKey(courseId, id) { return (courseId ? courseId + "/" : "") + id; }
+function registerFigImage(courseId, id, url) { if (courseId && id && url) HML_FIGS[figKey(courseId, id)] = url; }
 
 /* parse the body of an ```img``` fence or a [img:fN] line → { id, caption } */
 function parseImgRef(body) {
@@ -383,10 +387,10 @@ function parseImgRef(body) {
    server endpoint (/api/figures/<id>, for courses loaded from storage). Falls
    back to a placeholder only if the image is truly gone (e.g. an old course
    whose PDF hasn't been re-imported since images moved out of the state blob). */
-function ImageBlock({ id, caption, blockIndex }) {
+function ImageBlock({ courseId, id, caption, blockIndex }) {
   const [failed, setFailed] = React.useState(false);
-  const local = HML_FIGS[id];
-  const src = local || (id ? "/api/figures/" + encodeURIComponent(id) : null);
+  const local = HML_FIGS[figKey(courseId, id)];
+  const src = local || ((courseId && id) ? "/api/figures/" + encodeURIComponent(courseId) + "/" + encodeURIComponent(id) : null);
   // an in-memory image (e.g. just recovered/extracted) is trusted; only the
   // server-endpoint path can "fail" (404) → fall back to the placeholder.
   if (!src || (failed && !local)) return <div className="figure figure-fallback" data-block-index={blockIndex}><span className="muted mono" style={{ fontSize: 12 }}>figure du cours indisponible</span></div>;
@@ -401,4 +405,4 @@ function ImageBlock({ id, caption, blockIndex }) {
   );
 }
 
-Object.assign(window, { compileExpr, buildFigureSVG, FigureBlock, ImageBlock, registerFigImage, parseImgRef, APP_FIG_PALETTE, EXPORT_FIG_PALETTE });
+Object.assign(window, { compileExpr, buildFigureSVG, FigureBlock, ImageBlock, registerFigImage, figKey, parseImgRef, APP_FIG_PALETTE, EXPORT_FIG_PALETTE });

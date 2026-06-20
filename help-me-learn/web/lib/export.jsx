@@ -40,7 +40,8 @@ function inlineToHTML(text) {
   if (last < text.length) out += escapeHTML(text.slice(last));
   return out;
 }
-function blocksToHTML(text) {
+function blocksToHTML(text, courseId) {
+  const figUrl = (id) => (window.HML_FIGS || {})[window.figKey ? window.figKey(courseId, id) : id];
   const lines = (text || "").replace(/\r/g, "").split("\n");
   let out = "", i = 0;
   while (i < lines.length) {
@@ -48,7 +49,7 @@ function blocksToHTML(text) {
     if (!line.trim()) { i++; continue; }
     {
       const il = line.match(/^\s*\[img:\s*(f\d+)\s*\]\s*(.*)$/i);
-      if (il) { const url = (window.HML_FIGS || {})[il[1]]; const cap = (il[2] || "").trim(); out += url ? '<figure class="figure course-fig"><img src="' + url + '" alt="' + escapeHTML(cap || "Figure du cours") + '"/><figcaption><span class="cf-tag">Figure du cours</span>' + (cap ? " · " + escapeHTML(cap) : "") + "</figcaption></figure>" : '<div class="figure">figure du cours indisponible</div>'; i++; continue; }
+      if (il) { const url = figUrl(il[1]); const cap = (il[2] || "").trim(); out += url ? '<figure class="figure course-fig"><img src="' + url + '" alt="' + escapeHTML(cap || "Figure du cours") + '"/><figcaption><span class="cf-tag">Figure du cours</span>' + (cap ? " · " + escapeHTML(cap) : "") + "</figcaption></figure>" : '<div class="figure">figure du cours indisponible</div>'; i++; continue; }
     }
     if (line.trim().startsWith("```")) {
       const lang = line.trim().slice(3).trim().toLowerCase();
@@ -61,7 +62,7 @@ function blocksToHTML(text) {
         const svg = spec ? window.buildFigureSVG(spec, window.EXPORT_FIG_PALETTE) : null;
         out += svg ? '<div class="figure">' + svg + "</div>" : '<div class="figure">schéma non disponible</div>';
       } else if (lang === "img") {
-        const r = window.parseImgRef(body); const url = (window.HML_FIGS || {})[r.id];
+        const r = window.parseImgRef(body); const url = figUrl(r.id);
         out += url
           ? '<figure class="figure course-fig"><img src="' + url + '" alt="' + escapeHTML(r.caption || "Figure du cours") + '"/><figcaption><span class="cf-tag">Figure du cours</span>' + (r.caption ? " · " + escapeHTML(r.caption) : "") + "</figcaption></figure>"
           : '<div class="figure">figure du cours indisponible</div>';
@@ -85,7 +86,7 @@ function blocksToHTML(text) {
   }
   return out;
 }
-function mdToHTML(src) {
+function mdToHTML(src, courseId) {
   if (!src) return "";
   const parts = src.split(/(\[\[C\]\][\s\S]*?\[\[\/C\]\])/g);
   let html = "";
@@ -93,8 +94,8 @@ function mdToHTML(src) {
     if (!part) return;
     if (part.startsWith("[[C]]")) {
       const inner = part.replace(/^\[\[C\]\]/, "").replace(/\[\[\/C\]\]$/, "").trim();
-      html += '<div class="complement"><div class="complement-label">+ Complément ajouté (hors cours)</div>' + blocksToHTML(inner) + "</div>";
-    } else html += blocksToHTML(part);
+      html += '<div class="complement"><div class="complement-label">+ Complément ajouté (hors cours)</div>' + blocksToHTML(inner, courseId) + "</div>";
+    } else html += blocksToHTML(part, courseId);
   });
   return html;
 }
@@ -154,7 +155,7 @@ function buildExportHTML(ch) {
   const glo = (ch.termes && ch.termes.length)
     ? `<section class="glo"><h2>Glossaire</h2><table>${ch.termes.map(t => `<tr><td class="de">${esc(t.de)}</td><td class="fr">${esc(t.fr)}</td><td class="def">${esc(t.def || "")}</td></tr>`).join("")}</table></section>` : "";
   const secs = ch.sections.filter(s => s.status === "done")
-    .map(s => `<section class="sec"><h2><span class="num">${s.n}</span>${esc(s.titre)}</h2><div class="prose">${mdToHTML(s.contenu)}</div></section>`).join("");
+    .map(s => `<section class="sec"><h2><span class="num">${s.n}</span>${esc(s.titre)}</h2><div class="prose">${mdToHTML(s.contenu, ch.id)}</div></section>`).join("");
   const quiz = (ch.quiz && ch.quiz.length)
     ? `<section class="sec"><h2>Quiz — corrigé</h2>${ch.quiz.map((q, i) => `<div class="q"><p class="qq"><b>Q${i + 1}.</b> ${esc(q.q)}</p><ol class="opts">${q.options.map((o, j) => `<li class="${j === q.correct ? "ok" : ""}">${esc(o)}${j === q.correct ? " ✓" : ""}</li>`).join("")}</ol>${q.explication ? `<p class="exp">${esc(q.explication)}</p>` : ""}</div>`).join("")}</section>` : "";
   const cards = (ch.cards && ch.cards.length)

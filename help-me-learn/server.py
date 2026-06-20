@@ -77,20 +77,28 @@ def _db_set(key: str, value: str) -> None:
 # Original course images (extracted from PDFs) live in their OWN table — NOT in
 # the state blob — so the state stays small while the images persist and sync
 # across devices. `owner` mirrors the state key ("app" or "app:<uid>").
+# figures are keyed by (owner, course_id, fig_id): every course numbers its own
+# figures from f1, so the course_id is REQUIRED to keep them apart — without it
+# one course's f1 overwrites every other course's f1.
+_fig_cols = [r[1] for r in _db.execute("PRAGMA table_info(figures)").fetchall()]
+if _fig_cols and "course_id" not in _fig_cols:
+    _db.execute("DROP TABLE figures")   # old unscoped rows are corrupted (collided) — start clean
 _db.execute("""
     CREATE TABLE IF NOT EXISTS figures (
-        owner   TEXT NOT NULL,
-        fig_id  TEXT NOT NULL,
-        data    TEXT NOT NULL,
-        ts      TEXT DEFAULT (datetime('now')),
-        PRIMARY KEY (owner, fig_id)
+        owner     TEXT NOT NULL,
+        course_id TEXT NOT NULL,
+        fig_id    TEXT NOT NULL,
+        data      TEXT NOT NULL,
+        ts        TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (owner, course_id, fig_id)
     )
 """)
 _db.commit()
 
-def _fig_get(owner: str, fig_id: str) -> str | None:
+def _fig_get(owner: str, course_id: str, fig_id: str) -> str | None:
     row = _db.execute(
-        "SELECT data FROM figures WHERE owner = ? AND fig_id = ?", (owner, fig_id)
+        "SELECT data FROM figures WHERE owner = ? AND course_id = ? AND fig_id = ?",
+        (owner, course_id, fig_id),
     ).fetchone()
     return row[0] if row else None
 
@@ -434,12 +442,16 @@ async def save_state(body: StateBody, request: Request):
 # (see the `figures` table). Uploaded once at import; served as real images.
 # ---------------------------------------------------------------------------
 class FiguresBody(BaseModel):
+    courseId: str
     figures: list[dict]   # [{id, url}] — url is a data: URI
 
 
 @app.post("/api/figures")
 async def save_figures(body: FiguresBody, request: Request):
     owner = _state_key(_current_uid(request))
+    course = (body.courseId or "").strip()
+    if not course:
+        raise HTTPException(status_code=400, detail="courseId requis.")
 
     def _save() -> int:
         n = 0
@@ -448,9 +460,9 @@ async def save_figures(body: FiguresBody, request: Request):
             url = (f or {}).get("url")
             if fid and isinstance(url, str) and url.startswith("data:"):
                 _db.execute(
-                    "INSERT OR REPLACE INTO figures (owner, fig_id, data, ts) "
-                    "VALUES (?, ?, ?, datetime('now'))",
-                    (owner, fid, url),
+                    "INSERT OR REPLACE INTO figures (owner, course_id, fig_id, data, ts) "
+                    "VALUES (?, ?, ?, ?, datetime('now'))",
+                    (owner, course, fid, url),
                 )
                 n += 1
         _db.commit()
@@ -460,30 +472,14 @@ async def save_figures(body: FiguresBody, request: Request):
     return {"ok": True, "saved": saved}
 
 
-@app.get("/api/figures")
-async def list_figures(request: Request):
-    """Ids the current user has images for (logged-in users also see the global
-    set, mirroring how state seeds from the legacy global slot)."""
-    uid = _current_uid(request)
-    owner = _state_key(uid)
-
-    def _ids():
-        ids = {r[0] for r in _db.execute("SELECT fig_id FROM figures WHERE owner = ?", (owner,)).fetchall()}
-        if uid:
-            ids.update(r[0] for r in _db.execute("SELECT fig_id FROM figures WHERE owner = 'app'").fetchall())
-        return sorted(ids)
-
-    return {"ids": await run_in_threadpool(_ids)}
-
-
-@app.get("/api/figures/{fig_id}")
-async def get_figure(fig_id: str, request: Request):
+@app.get("/api/figures/{course_id}/{fig_id}")
+async def get_figure(course_id: str, fig_id: str, request: Request):
     uid = _current_uid(request)
 
     def _lookup():
-        d = _fig_get(_state_key(uid), fig_id)
+        d = _fig_get(_state_key(uid), course_id, fig_id)
         if d is None and uid:   # fall back to the global slot (seed parity)
-            d = _fig_get("app", fig_id)
+            d = _fig_get("app", course_id, fig_id)
         return d
 
     data_uri = await run_in_threadpool(_lookup)
