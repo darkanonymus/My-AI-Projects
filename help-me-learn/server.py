@@ -19,7 +19,10 @@ import json as json_module
 import os
 import pathlib
 import secrets
+import smtplib
 import sqlite3
+import time
+from email.message import EmailMessage
 
 # Load .env BEFORE importing llm, so the API key / model are captured on import.
 try:
@@ -111,6 +114,13 @@ _db.execute("""
         created TEXT DEFAULT (datetime('now'))
     )
 """)
+_db.execute("""
+    CREATE TABLE IF NOT EXISTS reset_tokens (
+        token   TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        expires INTEGER NOT NULL
+    )
+""")
 _db.commit()
 
 COOKIE = "hml_session"
@@ -141,6 +151,54 @@ def _new_session(user_id: int) -> str:
     _db.execute("INSERT INTO sessions (token, user_id) VALUES (?, ?)", (token, user_id))
     _db.commit()
     return token
+
+def _set_user_password(user_id: int, password: str) -> None:
+    _db.execute("UPDATE users SET pwhash = ? WHERE id = ?", (_hash_pw(password), user_id))
+    _db.commit()
+
+def _create_reset_token(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    _db.execute("INSERT INTO reset_tokens (token, user_id, expires) VALUES (?, ?, ?)",
+                (token, user_id, int(time.time()) + 3600))   # valid 1 hour
+    _db.commit()
+    return token
+
+def _consume_reset_token(token: str):
+    """Return the user_id for a valid token and delete it (one-time use), else None."""
+    row = _db.execute("SELECT user_id, expires FROM reset_tokens WHERE token = ?", (token,)).fetchone()
+    if not row:
+        return None
+    _db.execute("DELETE FROM reset_tokens WHERE token = ?", (token,))
+    _db.commit()
+    return row[0] if row[1] >= int(time.time()) else None
+
+def _send_reset_email(to_email: str, link: str) -> bool:
+    """Send the reset link over SMTP (config via env). If SMTP isn't configured,
+    log the link to the server console so a self-host admin can still relay it."""
+    host = os.environ.get("SMTP_HOST")
+    if not host:
+        print(f"[auth] SMTP not configured — reset link for {to_email}: {link}", flush=True)
+        return False
+    msg = EmailMessage()
+    msg["Subject"] = "Réinitialise ton mot de passe — Help me Learn"
+    msg["From"] = os.environ.get("SMTP_FROM", os.environ.get("SMTP_USER", "no-reply@" + host))
+    msg["To"] = to_email
+    msg.set_content(
+        "Tu as demandé à réinitialiser ton mot de passe.\n\n"
+        f"Ouvre ce lien (valable 1 heure) :\n{link}\n\n"
+        "Si tu n'es pas à l'origine de cette demande, ignore cet email."
+    )
+    try:
+        with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", "587")), timeout=20) as s:
+            s.starttls()
+            user = os.environ.get("SMTP_USER")
+            if user:
+                s.login(user, os.environ.get("SMTP_PASS", ""))
+            s.send_message(msg)
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[auth] reset email send failed: {e}", flush=True)
+        return False
 
 def _uid_for_token(token: str | None):
     if not token:
@@ -281,6 +339,42 @@ async def auth_login(body: AuthBody, response: Response):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect.")
     _set_session_cookie(response, _new_session(row[0]))
     return {"email": row[1]}
+
+
+class ForgotBody(BaseModel):
+    email: str
+
+
+@app.post("/api/auth/forgot")
+async def auth_forgot(body: ForgotBody, request: Request):
+    """Email a reset link if the account exists. Always returns ok — never
+    reveals whether an email is registered."""
+    email = (body.email or "").strip().lower()
+    row = await run_in_threadpool(_user_by_email, email)
+    if row:
+        token = await run_in_threadpool(_create_reset_token, row[0])
+        domain = os.environ.get("DOMAIN")
+        base = ("https://" + domain) if domain else str(request.base_url).rstrip("/")
+        await run_in_threadpool(_send_reset_email, email, base + "/?reset=" + token)
+    return {"ok": True}
+
+
+class ResetBody(BaseModel):
+    token: str
+    password: str
+
+
+@app.post("/api/auth/reset")
+async def auth_reset(body: ResetBody, response: Response):
+    if len(body.password or "") < 6:
+        raise HTTPException(status_code=400, detail="Mot de passe trop court (6 caractères minimum).")
+    uid = await run_in_threadpool(_consume_reset_token, body.token or "")
+    if not uid:
+        raise HTTPException(status_code=400, detail="Lien invalide ou expiré. Redemande un email de réinitialisation.")
+    await run_in_threadpool(_set_user_password, uid, body.password)
+    _set_session_cookie(response, _new_session(uid))   # log them straight in
+    row = _db.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
+    return {"email": row[0] if row else None}
 
 
 @app.post("/api/auth/logout")
