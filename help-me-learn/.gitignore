@@ -7,7 +7,10 @@ __pycache__/
 *.pyc
 
 # Local data — personal generated courses, not project source
+# (the -wal/-shm sidecars appear once SQLite runs in WAL mode)
 data.db
+data.db-wal
+data.db-shm
 
 # TTS — downloaded voice models (~60 MB each) + synthesized audio cache
 voices/

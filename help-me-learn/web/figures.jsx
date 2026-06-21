@@ -7,7 +7,17 @@
    Used both in-app (FigureBlock) and in export (buildFigureSVG string).
    ============================================================ */
 
-function _esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function _esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+
+/* Colours come from the AI-generated ```fig``` JSON and are interpolated raw
+   into SVG attributes (fill/stroke), which is injected via dangerouslySetInnerHTML.
+   Whitelist safe forms only (hex, rgb/rgba, CSS var, plain colour name) so a
+   crafted value can't break out of the attribute and inject an SVG event handler
+   (e.g. <animate onbegin=…>). Anything else falls back to the palette. */
+function _color(c, fallback) {
+  c = String(c == null ? "" : c).trim();
+  return /^(#[0-9a-fA-F]{3,8}|rgba?\([0-9.,\s%]+\)|var\(--[a-zA-Z0-9-]+\)|[a-zA-Z]{1,24})$/.test(c) ? c : (fallback == null ? null : fallback);
+}
 
 /* ---- safe math expression compiler: returns f(x) or null ----
    Supports: numbers, x, pi, e, + - * / ^, unary -, parentheses,
@@ -93,7 +103,7 @@ function figPlot(spec, pal) {
   if (0 >= xmin && 0 <= xmax) { const px = X(0); svg += `<line x1="${px.toFixed(1)}" y1="${m.t}" x2="${px.toFixed(1)}" y2="${m.t + ph}" stroke="${pal.soft}" stroke-width="1.5"/>`; }
   let ci = 0; const legend = [];
   series.forEach(s => {
-    const col = s.color || pal.series[ci % pal.series.length];
+    const col = _color(s.color, null) || pal.series[ci % pal.series.length];
     if (s.kind !== "hline" && s.kind !== "vline") ci++;
     if (s.kind === "curve" && s._pts) {
       let d = "", down = false;
@@ -146,7 +156,7 @@ function _maxLen(lines) { let m = 0; lines.forEach(l => { if (l.length > m) m = 
 
 /* ---------------- BARS — histogramme / comparaison ---------------- */
 function figBars(spec, pal) {
-  const data = (Array.isArray(spec.data) ? spec.data : []).map(d => ({ label: String(d && d.label != null ? d.label : ""), value: +(d && d.value) || 0, color: d && d.color }));
+  const data = (Array.isArray(spec.data) ? spec.data : []).map(d => ({ label: String(d && d.label != null ? d.label : ""), value: +(d && d.value) || 0, color: _color(d && d.color, null) }));
   if (!data.length) return null;
   const longest = Math.max(...data.map(d => d.label.length));
   const horizontal = spec.horizontal != null ? !!spec.horizontal : (data.length > 7 || longest > 11);

@@ -13,6 +13,7 @@ or simply:
 
 from __future__ import annotations
 import base64
+import collections
 import hashlib
 import hmac
 import json as json_module
@@ -21,8 +22,15 @@ import pathlib
 import secrets
 import smtplib
 import sqlite3
+import threading
 import time
 from email.message import EmailMessage
+
+
+def _log_err(context: str, exc: Exception) -> None:
+    """Log the real error server-side; clients only ever see a generic message
+    (so exception text never leaks paths / library internals)."""
+    print(f"[error] {context}: {type(exc).__name__}: {exc}", flush=True)
 
 # Load .env BEFORE importing llm, so the API key / model are captured on import.
 try:
@@ -54,6 +62,15 @@ DB.parent.mkdir(parents=True, exist_ok=True)
 # SQLite — single kv table, one row per named state slot
 # ---------------------------------------------------------------------------
 _db = sqlite3.connect(str(DB), check_same_thread=False)
+# The connection is shared across threadpool workers. A single sqlite3
+# connection is NOT safe for concurrent use, so every access is serialized
+# through _db_lock. WAL + a busy timeout add resilience under load.
+_db_lock = threading.RLock()
+try:
+    _db.execute("PRAGMA journal_mode=WAL")
+    _db.execute("PRAGMA busy_timeout=5000")
+except Exception as e:  # noqa: BLE001
+    _log_err("sqlite pragma", e)
 _db.execute("""
     CREATE TABLE IF NOT EXISTS kv (
         k  TEXT PRIMARY KEY,
@@ -64,15 +81,17 @@ _db.execute("""
 _db.commit()
 
 def _db_get(key: str) -> str | None:
-    row = _db.execute("SELECT v FROM kv WHERE k = ?", (key,)).fetchone()
+    with _db_lock:
+        row = _db.execute("SELECT v FROM kv WHERE k = ?", (key,)).fetchone()
     return row[0] if row else None
 
 def _db_set(key: str, value: str) -> None:
-    _db.execute(
-        "INSERT OR REPLACE INTO kv (k, v, ts) VALUES (?, ?, datetime('now'))",
-        (key, value),
-    )
-    _db.commit()
+    with _db_lock:
+        _db.execute(
+            "INSERT OR REPLACE INTO kv (k, v, ts) VALUES (?, ?, datetime('now'))",
+            (key, value),
+        )
+        _db.commit()
 
 # Original course images (extracted from PDFs) live in their OWN table — NOT in
 # the state blob — so the state stays small while the images persist and sync
@@ -96,10 +115,11 @@ _db.execute("""
 _db.commit()
 
 def _fig_get(owner: str, course_id: str, fig_id: str) -> str | None:
-    row = _db.execute(
-        "SELECT data FROM figures WHERE owner = ? AND course_id = ? AND fig_id = ?",
-        (owner, course_id, fig_id),
-    ).fetchone()
+    with _db_lock:
+        row = _db.execute(
+            "SELECT data FROM figures WHERE owner = ? AND course_id = ? AND fig_id = ?",
+            (owner, course_id, fig_id),
+        ).fetchone()
     return row[0] if row else None
 
 # ---------------------------------------------------------------------------
@@ -146,38 +166,54 @@ def _verify_pw(password: str, stored: str) -> bool:
         return False
     return hmac.compare_digest(_hash_pw(password, salt), stored)
 
+_SESSION_DAYS = 60   # server-side session lifetime (matches the cookie max-age)
+_SESSION_MODIFIER = f"-{_SESSION_DAYS} days"   # bound as a SQL parameter, never interpolated
+
 def _user_by_email(email: str):
-    return _db.execute("SELECT id, email, pwhash FROM users WHERE email = ?", (email,)).fetchone()
+    with _db_lock:
+        return _db.execute("SELECT id, email, pwhash FROM users WHERE email = ?", (email,)).fetchone()
 
 def _create_user(email: str, password: str) -> int:
-    cur = _db.execute("INSERT INTO users (email, pwhash) VALUES (?, ?)", (email, _hash_pw(password)))
-    _db.commit()
-    return cur.lastrowid
+    with _db_lock:
+        cur = _db.execute("INSERT INTO users (email, pwhash) VALUES (?, ?)", (email, _hash_pw(password)))
+        _db.commit()
+        return cur.lastrowid
+
+def _purge_expired() -> None:
+    """Opportunistic cleanup of stale sessions and reset tokens (called on login/
+    register so the tables don't grow unbounded). Caller holds _db_lock."""
+    _db.execute("DELETE FROM sessions WHERE created < datetime('now', ?)", (_SESSION_MODIFIER,))
+    _db.execute("DELETE FROM reset_tokens WHERE expires < ?", (int(time.time()),))
 
 def _new_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    _db.execute("INSERT INTO sessions (token, user_id) VALUES (?, ?)", (token, user_id))
-    _db.commit()
+    with _db_lock:
+        _db.execute("INSERT INTO sessions (token, user_id) VALUES (?, ?)", (token, user_id))
+        _purge_expired()
+        _db.commit()
     return token
 
 def _set_user_password(user_id: int, password: str) -> None:
-    _db.execute("UPDATE users SET pwhash = ? WHERE id = ?", (_hash_pw(password), user_id))
-    _db.commit()
+    with _db_lock:
+        _db.execute("UPDATE users SET pwhash = ? WHERE id = ?", (_hash_pw(password), user_id))
+        _db.commit()
 
 def _create_reset_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    _db.execute("INSERT INTO reset_tokens (token, user_id, expires) VALUES (?, ?, ?)",
-                (token, user_id, int(time.time()) + 3600))   # valid 1 hour
-    _db.commit()
+    with _db_lock:
+        _db.execute("INSERT INTO reset_tokens (token, user_id, expires) VALUES (?, ?, ?)",
+                    (token, user_id, int(time.time()) + 3600))   # valid 1 hour
+        _db.commit()
     return token
 
 def _consume_reset_token(token: str):
     """Return the user_id for a valid token and delete it (one-time use), else None."""
-    row = _db.execute("SELECT user_id, expires FROM reset_tokens WHERE token = ?", (token,)).fetchone()
-    if not row:
-        return None
-    _db.execute("DELETE FROM reset_tokens WHERE token = ?", (token,))
-    _db.commit()
+    with _db_lock:
+        row = _db.execute("SELECT user_id, expires FROM reset_tokens WHERE token = ?", (token,)).fetchone()
+        if not row:
+            return None
+        _db.execute("DELETE FROM reset_tokens WHERE token = ?", (token,))
+        _db.commit()
     return row[0] if row[1] >= int(time.time()) else None
 
 def _send_reset_email(to_email: str, link: str) -> bool:
@@ -211,15 +247,65 @@ def _send_reset_email(to_email: str, link: str) -> bool:
 def _uid_for_token(token: str | None):
     if not token:
         return None
-    row = _db.execute("SELECT user_id FROM sessions WHERE token = ?", (token,)).fetchone()
+    with _db_lock:
+        row = _db.execute(
+            "SELECT user_id FROM sessions WHERE token = ? "
+            "AND created >= datetime('now', ?)",
+            (token, _SESSION_MODIFIER),
+        ).fetchone()
     return row[0] if row else None
 
 def _current_uid(request: Request):
     return _uid_for_token(request.cookies.get(COOKIE))
 
+# Secure cookies in production (HTTPS). Local dev is plain HTTP on localhost,
+# where a Secure cookie would never be sent — so gate it on DOMAIN being set
+# (only the deployed stack sets DOMAIN). Override with COOKIE_SECURE=1/0.
+_COOKIE_SECURE = (os.environ.get("COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes"}
+                  or bool(os.environ.get("DOMAIN", "").strip()))
+
 def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(COOKIE, token, httponly=True, samesite="lax",
-                        max_age=60 * 60 * 24 * 60, path="/")
+                        secure=_COOKIE_SECURE, max_age=60 * 60 * 24 * _SESSION_DAYS, path="/")
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting — dependency-free, in-memory, per-client-IP sliding window.
+# The server is public and the heavy endpoints (LLM/TTS/STT/extract/translate)
+# burn paid API quota or CPU, so they MUST be throttled against anonymous abuse.
+# Single-process only (matches the single-container deployment); for multiple
+# workers move this to Redis.
+# ---------------------------------------------------------------------------
+_rl_lock = threading.Lock()
+_rl_hits: dict[tuple, collections.deque] = collections.defaultdict(collections.deque)
+
+def _client_ip(request: Request) -> str:
+    # Behind Caddy the real IP is the first hop of X-Forwarded-For.
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "?"
+
+def _rate_limit(request: Request, bucket: str, limit: int, window: int) -> None:
+    """Allow at most `limit` requests per `window` seconds per IP for `bucket`.
+    Raises HTTP 429 (with Retry-After) when exceeded."""
+    ip = _client_ip(request)
+    now = time.time()
+    cutoff = now - window
+    key = (bucket, ip)
+    with _rl_lock:
+        dq = _rl_hits[key]
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= limit:
+            retry = int(dq[0] + window - now) + 1
+            raise HTTPException(status_code=429, detail="Trop de requêtes — réessaie dans un instant.",
+                                headers={"Retry-After": str(max(1, retry))})
+        dq.append(now)
+        # Opportunistic sweep so idle IPs don't accumulate forever.
+        if len(_rl_hits) > 4096:
+            for k in [k for k, v in _rl_hits.items() if not v or v[-1] < cutoff]:
+                _rl_hits.pop(k, None)
 
 def _state_key(uid) -> str:
     return f"app:{uid}" if uid else "app"
@@ -250,17 +336,22 @@ class TranslateBody(BaseModel):
 
 
 @app.post("/api/translate")
-async def api_translate(body: TranslateBody):
+async def api_translate(body: TranslateBody, request: Request):
     """Translate a batch of course strings offline (Argos), preserving math /
     code / <<terms>> / markdown. 503 when Argos isn't installed."""
+    _rate_limit(request, "translate", 20, 60)
+    texts = body.texts or []
+    if len(texts) > 2000 or sum(len(t or "") for t in texts) > 2_000_000:
+        raise HTTPException(status_code=413, detail="Lot de traduction trop volumineux.")
     if body.source == body.target:
-        return {"translations": body.texts}
+        return {"translations": texts}
     if not translate_mod.available():
         raise HTTPException(status_code=503, detail="Traduction hors-ligne indisponible : lance « pip install argostranslate ».")
     try:
-        out = await run_in_threadpool(translate_mod.translate_batch, body.texts, body.source, body.target)
+        out = await run_in_threadpool(translate_mod.translate_batch, texts, body.source, body.target)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Traduction impossible : {e}")
+        _log_err("translate", e)
+        raise HTTPException(status_code=500, detail="Traduction impossible.")
     return {"translations": out}
 
 
@@ -272,11 +363,16 @@ class TTSBody(BaseModel):
 
 
 @app.post("/api/tts")
-async def api_tts(body: TTSBody):
+async def api_tts(body: TTSBody, request: Request):
     """Synthesize speech (Piper) → WAV bytes for background <audio> playback.
     Accepts `text`+`lang`, or `segments` (a sentence's fr/de parts) for one
     gapless clip. 503 when Piper/voices aren't set up — the frontend then
     falls back to Web Speech (foreground only)."""
+    _rate_limit(request, "tts", 40, 60)
+    if body.segments is not None and len(body.segments) > 400:
+        raise HTTPException(status_code=413, detail="Trop de segments audio.")
+    if len(body.text or "") > 20000:
+        raise HTTPException(status_code=413, detail="Texte trop long.")
     if not body.segments and not (body.text or "").strip():
         raise HTTPException(status_code=400, detail="Texte vide.")
     if not tts.available():
@@ -293,7 +389,8 @@ async def api_tts(body: TTSBody):
         else:
             audio = await run_in_threadpool(tts.synthesize, body.text, body.lang, body.voice)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Synthèse vocale impossible : {e}")
+        _log_err("tts", e)
+        raise HTTPException(status_code=500, detail="Synthèse vocale impossible.")
     return Response(
         content=audio,
         media_type="audio/wav",
@@ -302,10 +399,11 @@ async def api_tts(body: TTSBody):
 
 
 @app.post("/api/stt")
-async def api_stt(audio: UploadFile = File(...), lang: str = "fr"):
+async def api_stt(request: Request, audio: UploadFile = File(...), lang: str = "fr"):
     """Transcribe a recorded question (Whisper) → {text}. Cross-platform
     (incl. iOS) replacement for the browser's SpeechRecognition. 503 when
     faster-whisper isn't installed — the frontend then falls back to Web Speech."""
+    _rate_limit(request, "stt", 20, 60)
     if not stt.available():
         raise HTTPException(status_code=503, detail="Transcription indisponible : lance « pip install faster-whisper ».")
     data = await audio.read()
@@ -313,11 +411,12 @@ async def api_stt(audio: UploadFile = File(...), lang: str = "fr"):
         raise HTTPException(status_code=400, detail="Audio vide.")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Enregistrement trop long.")
-    suffix = "." + ((audio.filename or "q.webm").rsplit(".", 1)[-1] or "webm")
+    suffix = "." + ((audio.filename or "q.webm").rsplit(".", 1)[-1] or "webm")[:8]
     try:
         text = await run_in_threadpool(stt.transcribe, data, lang, suffix)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Transcription impossible : {e}")
+        _log_err("stt", e)
+        raise HTTPException(status_code=500, detail="Transcription impossible.")
     return {"text": text}
 
 
@@ -326,13 +425,16 @@ class AuthBody(BaseModel):
     password: str
 
 
+_MIN_PASSWORD = 10
+
 @app.post("/api/auth/register")
-async def auth_register(body: AuthBody, response: Response):
+async def auth_register(body: AuthBody, request: Request, response: Response):
+    _rate_limit(request, "register", 5, 3600)
     email = (body.email or "").strip().lower()
-    if "@" not in email or "." not in email or len(email) < 5:
+    if "@" not in email or "." not in email or len(email) < 5 or len(email) > 254:
         raise HTTPException(status_code=400, detail="Email invalide.")
-    if len(body.password or "") < 6:
-        raise HTTPException(status_code=400, detail="Mot de passe trop court (6 caractères minimum).")
+    if len(body.password or "") < _MIN_PASSWORD:
+        raise HTTPException(status_code=400, detail=f"Mot de passe trop court ({_MIN_PASSWORD} caractères minimum).")
     if await run_in_threadpool(_user_by_email, email):
         raise HTTPException(status_code=409, detail="Un compte existe déjà avec cet email.")
     uid = await run_in_threadpool(_create_user, email, body.password)
@@ -341,7 +443,8 @@ async def auth_register(body: AuthBody, response: Response):
 
 
 @app.post("/api/auth/login")
-async def auth_login(body: AuthBody, response: Response):
+async def auth_login(body: AuthBody, request: Request, response: Response):
+    _rate_limit(request, "login", 10, 300)
     row = await run_in_threadpool(_user_by_email, (body.email or "").strip().lower())
     if not row or not _verify_pw(body.password or "", row[2]):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect.")
@@ -357,6 +460,7 @@ class ForgotBody(BaseModel):
 async def auth_forgot(body: ForgotBody, request: Request):
     """Email a reset link if the account exists. Always returns ok — never
     reveals whether an email is registered."""
+    _rate_limit(request, "forgot", 5, 3600)
     email = (body.email or "").strip().lower()
     row = await run_in_threadpool(_user_by_email, email)
     if row:
@@ -373,15 +477,17 @@ class ResetBody(BaseModel):
 
 
 @app.post("/api/auth/reset")
-async def auth_reset(body: ResetBody, response: Response):
-    if len(body.password or "") < 6:
-        raise HTTPException(status_code=400, detail="Mot de passe trop court (6 caractères minimum).")
+async def auth_reset(body: ResetBody, request: Request, response: Response):
+    _rate_limit(request, "reset", 10, 3600)
+    if len(body.password or "") < _MIN_PASSWORD:
+        raise HTTPException(status_code=400, detail=f"Mot de passe trop court ({_MIN_PASSWORD} caractères minimum).")
     uid = await run_in_threadpool(_consume_reset_token, body.token or "")
     if not uid:
         raise HTTPException(status_code=400, detail="Lien invalide ou expiré. Redemande un email de réinitialisation.")
     await run_in_threadpool(_set_user_password, uid, body.password)
     _set_session_cookie(response, _new_session(uid))   # log them straight in
-    row = _db.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
+    with _db_lock:
+        row = _db.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
     return {"email": row[0] if row else None}
 
 
@@ -389,8 +495,9 @@ async def auth_reset(body: ResetBody, response: Response):
 async def auth_logout(request: Request, response: Response):
     tok = request.cookies.get(COOKIE)
     if tok:
-        _db.execute("DELETE FROM sessions WHERE token = ?", (tok,))
-        _db.commit()
+        with _db_lock:
+            _db.execute("DELETE FROM sessions WHERE token = ?", (tok,))
+            _db.commit()
     response.delete_cookie(COOKIE, path="/")
     return {"ok": True}
 
@@ -400,7 +507,8 @@ async def auth_me(request: Request):
     uid = _current_uid(request)
     if not uid:
         return JSONResponse(None)
-    row = _db.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
+    with _db_lock:
+        row = _db.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
     return {"email": row[0]} if row else JSONResponse(None)
 
 
@@ -461,17 +569,18 @@ async def save_figures(body: FiguresBody, request: Request):
 
     def _save() -> int:
         n = 0
-        for f in body.figures or []:
-            fid = str((f or {}).get("id") or "").strip()
-            url = (f or {}).get("url")
-            if fid and isinstance(url, str) and url.startswith("data:"):
-                _db.execute(
-                    "INSERT OR REPLACE INTO figures (owner, course_id, fig_id, data, ts) "
-                    "VALUES (?, ?, ?, ?, datetime('now'))",
-                    (owner, course, fid, url),
-                )
-                n += 1
-        _db.commit()
+        with _db_lock:
+            for f in body.figures or []:
+                fid = str((f or {}).get("id") or "").strip()
+                url = (f or {}).get("url")
+                if fid and isinstance(url, str) and url.startswith("data:"):
+                    _db.execute(
+                        "INSERT OR REPLACE INTO figures (owner, course_id, fig_id, data, ts) "
+                        "VALUES (?, ?, ?, ?, datetime('now'))",
+                        (owner, course, fid, url),
+                    )
+                    n += 1
+            _db.commit()
         return n
 
     saved = await run_in_threadpool(_save)
@@ -505,7 +614,8 @@ _MAX_UPLOAD = 50 * 1024 * 1024   # 50 MB hard limit
 _VALID_PROVIDERS = {"gemini", "claude", "ollama"}
 
 @app.post("/api/extract")
-async def api_extract(file: UploadFile = File(...)):
+async def api_extract(request: Request, file: UploadFile = File(...)):
+    _rate_limit(request, "extract", 10, 60)
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Fichier vide.")
@@ -516,7 +626,8 @@ async def api_extract(file: UploadFile = File(...)):
     try:
         result = await run_in_threadpool(extract_pdf, data)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Extraction impossible : {e}")
+        _log_err("extract", e)
+        raise HTTPException(status_code=500, detail="Extraction impossible.")
     return JSONResponse(result)
 
 
@@ -528,24 +639,37 @@ class LLMRequest(BaseModel):
     images: list[dict] | None = None
 
 
-@app.post("/api/llm")
-async def api_llm(req: LLMRequest):
+_MAX_PROMPT_CHARS = 600_000   # ~150k tokens; generous for a full course PDF, but bounded
+_MAX_IMAGES = 20
+
+def _validate_llm(req: "LLMRequest") -> None:
     if req.provider not in _VALID_PROVIDERS:
         raise HTTPException(status_code=422, detail=f"Provider invalide : {req.provider!r}. Valeurs acceptées : {sorted(_VALID_PROVIDERS)}")
+    if len(req.prompt or "") + len(req.system or "") > _MAX_PROMPT_CHARS:
+        raise HTTPException(status_code=413, detail="Requête trop volumineuse.")
+    if req.images is not None and len(req.images) > _MAX_IMAGES:
+        raise HTTPException(status_code=413, detail="Trop d'images dans la requête.")
+
+
+@app.post("/api/llm")
+async def api_llm(req: LLMRequest, request: Request):
+    _rate_limit(request, "llm", 20, 60)
+    _validate_llm(req)
     try:
         text = await llm.complete(req.system, req.prompt, req.provider, req.model, req.images)
     except llm.LLMError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Erreur du moteur : {e}")
+        _log_err("llm", e)
+        raise HTTPException(status_code=500, detail="Erreur interne du moteur.")
     return {"text": text}
 
 
 @app.post("/api/llm/stream")
-async def api_llm_stream(req: LLMRequest):
+async def api_llm_stream(req: LLMRequest, request: Request):
     """Server-Sent Events stream — yields text chunks as they arrive from the LLM."""
-    if req.provider not in _VALID_PROVIDERS:
-        raise HTTPException(status_code=422, detail=f"Provider invalide : {req.provider!r}")
+    _rate_limit(request, "llm", 20, 60)
+    _validate_llm(req)
 
     async def event_stream():
         try:
@@ -554,7 +678,8 @@ async def api_llm_stream(req: LLMRequest):
         except llm.LLMError as e:
             yield f"data: {json_module.dumps({'error': str(e)})}\n\n"
         except Exception as e:  # noqa: BLE001
-            yield f"data: {json_module.dumps({'error': str(e)})}\n\n"
+            _log_err("llm/stream", e)
+            yield f"data: {json_module.dumps({'error': 'Erreur interne du moteur.'})}\n\n"
         finally:
             yield "data: [DONE]\n\n"
 

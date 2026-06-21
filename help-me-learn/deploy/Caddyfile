@@ -2,5 +2,18 @@
 # $DOMAIN comes from ../.env (e.g. DOMAIN=help-me-learn.duckdns.org).
 {$DOMAIN} {
 	encode zstd gzip
+
+	# Security headers (Caddy adds none by default).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "DENY"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		Permissions-Policy        "geolocation=(), camera=(), microphone=(self)"
+		# Note: no strict CSP yet — Babel-standalone transpiles JSX in the browser,
+		# which requires 'unsafe-eval'. A real CSP needs a build step (see AUDIT_REPORT.md).
+		-Server
+	}
+
 	reverse_proxy app:8000
 }

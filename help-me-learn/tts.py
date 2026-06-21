@@ -214,7 +214,7 @@ def synthesize_segments(segments: list[dict]) -> bytes:
         return synthesize(segs[0]["text"], segs[0].get("lang", "fr"), segs[0].get("voice"))
 
     sig = "||".join(f"{_name_for((s.get('lang') or 'fr')[:2], s.get('voice'))}:{s['text']}" for s in segs)
-    key = hashlib.sha1(("seg|" + sig).encode("utf-8")).hexdigest()
+    key = hashlib.sha1(("seg|" + sig).encode("utf-8"), usedforsecurity=False).hexdigest()
     cache = CACHE_DIR / f"{key}.wav"
     if cache.exists():
         try:
@@ -258,7 +258,7 @@ def synthesize(text: str, lang: str = "fr", voice: str | None = None) -> bytes:
     name = _name_for(lang, voice)
     norm = _normalize(text, lang)
 
-    key = hashlib.sha1(f"{name}|{norm}".encode("utf-8")).hexdigest()
+    key = hashlib.sha1(f"{name}|{norm}".encode("utf-8"), usedforsecurity=False).hexdigest()
     cache = CACHE_DIR / f"{key}.wav"
     if cache.exists():
         try:

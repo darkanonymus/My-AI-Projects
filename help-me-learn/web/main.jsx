@@ -207,7 +207,7 @@ function AuthModal({ open, onClose, onAuthed }) {
                     <label className="field-label" style={{ marginTop: "var(--space-3)" }}>Mot de passe</label>
                     <div style={{ position: "relative" }}>
                       <input type={showPw ? "text" : "password"} autoComplete={isReg ? "new-password" : "current-password"} value={password}
-                        onChange={e => setPassword(e.target.value)} placeholder={isReg ? "6 caractères minimum" : "••••••••"} className="field" style={{ width: "100%", paddingRight: 42 }} required />
+                        onChange={e => setPassword(e.target.value)} placeholder={isReg ? "10 caractères minimum" : "••••••••"} className="field" style={{ width: "100%", paddingRight: 42 }} required />
                       <button type="button" className="icon-btn" onClick={() => setShowPw(s => !s)}
                         aria-label={showPw ? "Masquer le mot de passe" : "Afficher le mot de passe"} title={showPw ? "Masquer" : "Afficher"}
                         style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)" }}>
@@ -287,7 +287,7 @@ function ResetModal({ token, onClose }) {
             <label className="field-label">Nouveau mot de passe</label>
             <div style={{ position: "relative" }}>
               <input type={showPw ? "text" : "password"} autoComplete="new-password" value={password}
-                onChange={e => setPassword(e.target.value)} placeholder="6 caractères minimum" className="field" style={{ width: "100%", paddingRight: 42 }} required />
+                onChange={e => setPassword(e.target.value)} placeholder="10 caractères minimum" className="field" style={{ width: "100%", paddingRight: 42 }} required />
               <button type="button" className="icon-btn" onClick={() => setShowPw(s => !s)}
                 aria-label={showPw ? "Masquer" : "Afficher"} title={showPw ? "Masquer" : "Afficher"}
                 style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)" }}>

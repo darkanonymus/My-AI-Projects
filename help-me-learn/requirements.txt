@@ -28,3 +28,7 @@ num2words>=0.5               # speak numbers as words (read-aloud normalization)
 # API). Language packs download on first use. Falls back to a clear message if
 # absent. After install: python -c "import argostranslate.package as p; p.update_package_index()"
 argostranslate>=1.9          # offline neural MT (https://github.com/argosopentech/argos-translate)
+# Transitive pin: argos -> stanza. stanza < 1.12.2 has CVE-2026-54499 (flagged by
+# pip-audit). Also note: stanza pulls torch + CUDA (several GB, unused on CPU) —
+# see AUDIT_REPORT.md for a slimming path (torch CPU-only / dropping argos).
+stanza>=1.12.2
