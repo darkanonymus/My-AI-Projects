@@ -19,7 +19,7 @@ Tous les findings Critiques/Élevés/Moyens et les Faibles à fort levier ont é
 | M-3 | XSS moteur figures | ✅ Corrigé | `_esc` échappe aussi `"`/`'` ; `_color()` whiteliste les couleurs (hex/rgb/var/nom) avant interpolation en attribut SVG. [figures.jsx](help-me-learn/web/figures.jsx) |
 | M-4 | Fuite d'exceptions | ✅ Corrigé | Messages clients génériques + `_log_err()` côté serveur (translate/tts/stt/extract/llm + stream). |
 | M-5 | CDN sans SRI / pdf.js CVE | ✅ Corrigé | SRI (sha384) ajouté sur pdf.js + tesseract. *(pdf.js 3.x conservé : CVE-2024-4367 non atteignable — aucun `getDocument` côté client, l'extraction est serveur.)* [index.html](help-me-learn/web/index.html) |
-| M-6 | Dépendance vulnérable | ✅ Corrigé | `stanza>=1.12.2` épinglé (CVE-2026-54499, transitif via argos). Lockfile complet : reste recommandé. [requirements.txt](help-me-learn/requirements.txt) |
+| M-6 | Dépendance vulnérable | ✅ Non applicable | CVE-2026-54499 (stanza) : l'argostranslate actuel (≥1.11) utilise spaCy, **pas stanza** — la CVE ne touche pas le déploiement. (Le pin tenté `stanza>=1.12.2` cassait le build Docker — retiré.) Lockfile complet : reste recommandé. [requirements.txt](help-me-learn/requirements.txt) |
 | L-2 | Mot de passe faible | ✅ Corrigé | Minimum 6 → **10** (back + front). |
 | L-3 | Entrées non bornées | ✅ Corrigé | Plafonds ajoutés (cf. H-1). |
 | Bandit | SHA1 (2× High) | ✅ Corrigé | `usedforsecurity=False` (clés de cache, non sécuritaire) → 0 High. |
@@ -191,7 +191,7 @@ Propre et acyclique : `server.py` importe `llm, tts, stt, translate, extract` ; 
 | **gitleaks** 8.30.1 (`--log-opts=--all`) | **0 fuite** sur 40 commits / tout l'historique. ✔ |
 | **vulture** 2.16 (conf. ≥80 %) | **0 code mort** dans le backend. ✔ |
 | **bandit** 1.9.4 | Avant : 2 High / 1 Med / 15 Low. **Après correctifs : 0 High**, 1 Med (B310 — `urllib` dans `scripts/download_voices.py`, URL de voix connue, légitime), 15 Low (`try/except/pass` défensifs, acceptables). |
-| **pip-audit** 2.10.1 | 1 vuln : `stanza 1.10.1` → **CVE-2026-54499** (fix 1.12.2), transitif via argostranslate → **épinglé** `stanza>=1.12.2`. *(Note : `pip-audit -r` ne résout pas entièrement sur cette machine Windows — `sentencepiece` ne compile pas ; rejouer sur le VPS Linux.)* |
+| **pip-audit** 2.10.1 | A signalé `stanza 1.10.1` → **CVE-2026-54499**. **Faux positif pour la prod** : c'était une vieille install locale ; l'argostranslate déployé (≥1.11) est passé à spaCy et ne tire plus stanza, donc le paquet n'est pas présent en prod. (Pin retiré car il cassait le build Docker.) Rejouer `pip-audit` sur le VPS pour confirmer l'arbre réel. |
 | **semgrep** 1.167.0 | Installé mais **ne s'exécute pas nativement sous Windows** (sortie vide, exit 2 — limitation connue, le core OCaml requiert WSL/Docker). À rejouer sur le VPS : `semgrep scan --config=auto --config p/owasp-top-ten --config p/python .` |
 
 Commandes pour rejouer (VPS Linux, où le code est aussi cloné) :
