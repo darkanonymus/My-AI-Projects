@@ -438,33 +438,42 @@ function App() {
           return;
         }
 
-        // Server has data — only use it if it has MORE chapters than current local state.
-        // This prevents test/stale server data from overwriting a richer local state.
+        // MERGE server + this device by course id (union) so courses created on
+        // any device combine under the account — and a course made offline gets
+        // absorbed into the account on the next logged-in load.
         const serverChs = serverState.chapters || [];
         const localChs  = chapters; // React state at mount time
-        if (serverChs.length > localChs.length) {
-          // Server has chapters this browser hasn't seen — restore from server
-          serverChs.forEach(c => {
-            (c.sections || []).forEach(s => { if (s.status === "loading") s.status = s.contenu ? "done" : "pending"; });
-            if (c.status === "generating") c.status = "done";
-          });
-          let max = 0;
-          serverChs.forEach(c => { const m = /ch(\d+)/.exec(c.id || ""); if (m) max = Math.max(max, +m[1]); });
-          CH_SEQ = max + 1;
-          let imax = 0;
-          serverChs.forEach(c => (c.insertions || []).forEach(ins => { const m = /ins(\d+)/.exec(ins.id || ""); if (m) imax = Math.max(imax, +m[1]); }));
-          INS_SEQ = Math.max(INS_SEQ, imax + 1);
-          setChapters(serverChs);
-          if (serverState.currentId) setCurrentId(serverState.currentId);
-          if (serverState.theme)     setTheme(serverState.theme);
-          if (Array.isArray(serverState.progressLog)) setProgressLog(serverState.progressLog);
-          if (!serverChs.length) { setHome(true); setTab("learn"); }
-        } else if (localChs.length > serverChs.length) {
-          // Local has more chapters — push local state to server to update it
+        serverChs.forEach(c => {
+          (c.sections || []).forEach(s => { if (s.status === "loading") s.status = s.contenu ? "done" : "pending"; });
+          if (c.status === "generating") c.status = "done";
+        });
+        const doneN = c => (c.sections || []).filter(s => s.status === "done").length;
+        const byId = new Map();
+        serverChs.forEach(c => byId.set(c.id, c));
+        localChs.forEach(c => {
+          const s = byId.get(c.id);
+          if (!s) byId.set(c.id, c);                       // device-only course → keep
+          else if (doneN(c) > doneN(s)) byId.set(c.id, c); // both have it → keep the more complete one
+        });
+        const merged = [...byId.values()].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        let max = 0, imax = 0;
+        merged.forEach(c => {
+          const m = /ch(\d+)/.exec(c.id || ""); if (m) max = Math.max(max, +m[1]);
+          (c.insertions || []).forEach(ins => { const mm = /ins(\d+)/.exec(ins.id || ""); if (mm) imax = Math.max(imax, +mm[1]); });
+        });
+        CH_SEQ = Math.max(CH_SEQ, max + 1); INS_SEQ = Math.max(INS_SEQ, imax + 1);
+        setChapters(merged);
+        if (serverState.currentId) setCurrentId(serverState.currentId);
+        if (serverState.theme)     setTheme(serverState.theme);
+        const srvLog = Array.isArray(serverState.progressLog) ? serverState.progressLog : [];
+        if (srvLog.length >= (progressLog || []).length) setProgressLog(srvLog);
+        if (!merged.length) { setHome(true); setTab("learn"); }
+        // push the union back so the server + every other device get the full set
+        if (merged.length !== serverChs.length) {
           fetch("/api/state", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ data: JSON.stringify({ chapters: localChs, currentId, theme, progressLog }) }),
+            body: JSON.stringify({ data: JSON.stringify({ chapters: merged, currentId: serverState.currentId || currentId, theme: serverState.theme || theme, progressLog: srvLog.length >= (progressLog || []).length ? srvLog : progressLog }) }),
           }).catch(() => {});
         }
       } catch (e) {}
