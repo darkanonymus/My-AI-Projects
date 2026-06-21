@@ -795,12 +795,50 @@ function App() {
     logProgress({ type: "quiz", courseId, score, total });
   }
 
-  function downloadChapter(id) {
+  /* Pull a course's images into the registry (data URIs) so an export can embed
+     them — they no longer live in the state blob, only on the server. */
+  async function ensureCourseFigures(ch) {
+    const figs = (ch && ch.figures) || [];
+    await Promise.all(figs.map(async f => {
+      if (!f || !f.id) return;
+      const key = window.figKey(ch.id, f.id);
+      if (window.HML_FIGS[key]) return;
+      try {
+        const r = await fetch("/api/figures/" + encodeURIComponent(ch.id) + "/" + encodeURIComponent(f.id));
+        if (!r.ok) return;
+        const blob = await r.blob();
+        const uri = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(null); fr.readAsDataURL(blob); });
+        if (uri) window.HML_FIGS[key] = uri;
+      } catch (_) {}
+    }));
+  }
+
+  async function downloadChapter(id) {
     const ch = chaptersRef.current.find(c => c.id === id); if (!ch) return;
     try {
+      flash("Préparation du téléchargement…");
+      await ensureCourseFigures(ch);
       window.downloadFile(window.safeName(ch.titre) + ".html", window.buildExportHTML(ch), "text/html;charset=utf-8");
-      flash("Cours téléchargé — ouvre-le, puis imprime-le en PDF si tu veux.");
+      flash("Cours téléchargé (HTML, images incluses).");
     } catch (e) { flash("Échec du téléchargement."); }
+  }
+
+  /* One-click PDF: build the standalone HTML (images embedded), open it and
+     trigger the browser print dialog → "Enregistrer en PDF". */
+  async function downloadPDF(id) {
+    const ch = chaptersRef.current.find(c => c.id === id); if (!ch) return;
+    flash("Préparation du PDF…");
+    try {
+      await ensureCourseFigures(ch);
+      const html = window.buildExportHTML(ch);
+      const w = window.open("", "_blank");
+      if (!w) { flash("Autorise les pop-ups pour générer le PDF."); return; }
+      w.document.open(); w.document.write(html); w.document.close();
+      const go = () => { try { w.focus(); w.print(); } catch (_) {} };
+      w.onload = () => setTimeout(go, 500);
+      setTimeout(go, 1200);   // fallback if onload already fired
+      flash("Dans la fenêtre d'impression, choisis « Enregistrer en PDF ».");
+    } catch (e) { flash("Échec de l'export PDF."); }
   }
 
   /* Recover a course's ORIGINAL images by re-importing its PDF: re-extract,
@@ -1022,7 +1060,7 @@ function App() {
         )}
         <main className="content-inner">
           {tab === "learn" && <LearnTab chapters={chapters} current={currentView} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} onTranslate={translateChapter} onSetDisplayLang={setChapterLang} />}
-          {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onNew={newCourse} onRecoverImages={recoverImages} />}
+          {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onDownloadPDF={downloadPDF} onNew={newCourse} onRecoverImages={recoverImages} />}
           {tab === "quiz" && <QuizTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} onQuizComplete={onQuizDone} />}
           {tab === "cards" && <FlashTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}
           {tab === "progress" && <window.ProgressDashboard chapters={chapters} progressLog={progressLog} onOpen={openCourse} />}

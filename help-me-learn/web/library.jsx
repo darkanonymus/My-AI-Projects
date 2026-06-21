@@ -20,7 +20,7 @@ function LibStat({ n, label, color }) {
   );
 }
 
-function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onRecoverImages }) {
+function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onDownloadPDF, onRecoverImages }) {
   const [confirm, setConfirm] = useState(false);
   const pct = libPct(ch);
   const done = ch.sections.filter(s => s.status === "done").length;
@@ -66,7 +66,8 @@ function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onReco
           <button className="btn btn-sm btn-primary" onClick={() => onOpen(ch.id, "learn")}><BIcon name="open" size={14} /> {window.ui("btnOpen")}</button>
           {ch.quiz && ch.quiz.length > 0 && <button className="btn btn-sm" onClick={() => onOpen(ch.id, "quiz")}><BIcon name="quiz" size={14} /></button>}
           {ch.cards && ch.cards.length > 0 && <button className="btn btn-sm" onClick={() => onOpen(ch.id, "cards")}><BIcon name="cards" size={14} /></button>}
-          {done > 0 && <button className="btn btn-sm" onClick={() => onDownload(ch.id)} title="Télécharger (HTML / PDF)"><BIcon name="download" size={14} /></button>}
+          {done > 0 && <button className="btn btn-sm" onClick={() => onDownload(ch.id)} title="Télécharger en HTML (ré-importable)"><BIcon name="download" size={14} /></button>}
+          {done > 0 && onDownloadPDF && <button className="btn btn-sm" onClick={() => onDownloadPDF(ch.id)} title="Enregistrer en PDF (imprimer)"><BIcon name="file" size={14} /></button>}
           {(ch.figures || []).length > 0 && onRecoverImages &&
             <button className="btn btn-sm" onClick={() => onRecoverImages(ch)} title="Récupérer les images du cours depuis le PDF ou le HTML téléchargé"><BIcon name="image" size={14} /></button>}
           <span className="spacer" />
@@ -81,7 +82,7 @@ function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onReco
   );
 }
 
-function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, onNew, onRecoverImages }) {
+function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, onDownloadPDF, onNew, onRecoverImages }) {
   if (!chapters.length) {
     return (
       <div>
@@ -125,7 +126,7 @@ function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, 
       {/* course grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "var(--space-5)" }}>
         {chapters.slice().reverse().map(ch => (
-          <CourseCard key={ch.id} ch={ch} onOpen={onOpen} onToggleMastered={onToggleMastered} onDelete={onDelete} onDownload={onDownload} onRecoverImages={onRecoverImages} />
+          <CourseCard key={ch.id} ch={ch} onOpen={onOpen} onToggleMastered={onToggleMastered} onDelete={onDelete} onDownload={onDownload} onDownloadPDF={onDownloadPDF} onRecoverImages={onRecoverImages} />
         ))}
       </div>
     </div>
