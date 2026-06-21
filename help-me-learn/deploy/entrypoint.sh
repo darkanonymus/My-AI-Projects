@@ -20,5 +20,11 @@ fi
 mkdir -p /app/.tts_cache
 chown -R app:app /data /app/.tts_cache 2>/dev/null || true
 
+# Pre-download the offline-translation models (Argos packs + stanza) in the
+# BACKGROUND, as the app user, so the first user translation never triggers a
+# slow lazy download. Non-blocking: the server starts immediately; the lazy
+# fallback in translate.py covers anything not yet ready.
+gosu app python deploy/predownload_translate.py >> /data/predownload.log 2>&1 &
+
 # Drop root -> run the server as the non-root `app` user.
 exec gosu app uvicorn server:app --host 0.0.0.0 --port 8000
