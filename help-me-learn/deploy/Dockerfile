@@ -12,9 +12,14 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # espeak-ng: Piper phonemization fallback. ffmpeg: extra codec safety for STT.
+# gosu: drop from root to the non-root `app` user in the entrypoint.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        espeak-ng ffmpeg ca-certificates \
+        espeak-ng ffmpeg ca-certificates gosu \
     && rm -rf /var/lib/apt/lists/*
+
+# Non-root runtime user. The entrypoint starts as root (to prepare the /data
+# volume + fetch voices) then drops to this user via gosu to run the server.
+RUN useradd --create-home --uid 10001 app
 
 COPY requirements.txt ./
 # argostranslate -> stanza -> torch. By default torch drags in ~3.4 GB of CUDA
