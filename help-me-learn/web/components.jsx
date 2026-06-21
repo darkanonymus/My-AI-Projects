@@ -48,6 +48,7 @@ function Icon({ name, size = 18 }) {
     mic:     <><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></>,
     chevrondown: <path d="M6 9l6 6 6-6"/>,
     logout:  <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></>,
+    pencil:  <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></>,
     openbook: <><path d="M12 6.6C10.4 5.2 7.2 4.6 4 5.1v13.2c3.2-.5 6.4.1 8 1.5 1.6-1.4 4.8-2 8-1.5V5.1c-3.2-.5-6.4.1-8 1.5z"/><path d="M12 6.6V20.3"/></>,
   };
   return <svg {...p}>{paths[name] || null}</svg>;
@@ -55,6 +56,35 @@ function Icon({ name, size = 18 }) {
 
 function Spinner({ size = 18 }) {
   return <span className="spinner" style={{ width: size, height: size }} aria-hidden="true" />;
+}
+
+/* Learniverse logo — an open book under an orbit with a star: a "learning
+   universe". Self-contained gradient tile, crisp at any size. */
+function BrandMark({ size = 42 }) {
+  const gid = "lv-grad";
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#3a2c8c" />
+          <stop offset="1" stopColor="#6d4be0" />
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" rx="13" fill={`url(#${gid})`} />
+      {/* orbit */}
+      <ellipse cx="24" cy="18.5" rx="14" ry="5.4" transform="rotate(-20 24 18.5)"
+        stroke="#ffffff" strokeOpacity="0.38" strokeWidth="1.3" />
+      {/* star / spark on the orbit */}
+      <path d="M35 8.4c.55 2.2 1.0 2.65 3.2 3.2-2.2.55-2.65 1.0-3.2 3.2-.55-2.2-1.0-2.65-3.2-3.2 2.2-.55 2.65-1.0 3.2-3.2z"
+        fill="#f6b84e" />
+      {/* open book */}
+      <g stroke="#ffffff" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" fill="none">
+        <path d="M24 28C20.4 25.9 14.6 25.4 10 26.9V37.6C14.6 36.1 20.4 36.6 24 38.7" />
+        <path d="M24 28C27.6 25.9 33.4 25.4 38 26.9V37.6C33.4 36.1 27.6 36.6 24 38.7" />
+        <path d="M24 28V38.7" />
+      </g>
+    </svg>
+  );
 }
 
 function ProgressBar({ value, max = 1 }) {
@@ -168,4 +198,4 @@ function PageHead({ kicker, title, children, hero }) {
   );
 }
 
-Object.assign(window, { Icon, Spinner, ProgressBar, Tag, Ring, Empty, PageHead, useReveal, Reveal, useOutsideClose, useState, useEffect, useRef });
+Object.assign(window, { Icon, BrandMark, Spinner, ProgressBar, Tag, Ring, Empty, PageHead, useReveal, Reveal, useOutsideClose, useState, useEffect, useRef });

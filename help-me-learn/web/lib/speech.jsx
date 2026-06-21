@@ -375,7 +375,7 @@ class AudioReader {
     try {
       const it = this.queue[this.idx];
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: this.chapterTitle || "Help me Learn",
+        title: this.chapterTitle || "Learniverse",
         artist: (it && it.text) ? it.text.slice(0, 80) : "",
         album: it ? ("Section " + it.sectionN) : "",
       });

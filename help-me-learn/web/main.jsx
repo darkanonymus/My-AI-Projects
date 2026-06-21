@@ -784,6 +784,7 @@ function App() {
       undoTimer.current = setTimeout(() => setUndo(null), 6000);
     }
   }
+  function renameChapter(id, titre) { patchChapter(id, { titre: titre }); }
   function toggleMastered(id) {
     const ch = chaptersRef.current.find(c => c.id === id);
     const becoming = !(ch && ch.mastered);
@@ -935,10 +936,10 @@ function App() {
       {/* ---------- SIDEBAR ---------- */}
       <aside className="sidebar">
         <div className="side-brand">
-          <div className="brand-mark"><AIcon name="openbook" size={24} /></div>
+          <div className="brand-mark brand-mark--logo"><window.BrandMark size={42} /></div>
           <div className="brand-text">
-            <span className="brand-title">Help me Learn</span>
-            <span className="brand-sub">comprendre, pas mémoriser</span>
+            <span className="brand-title">Learniverse</span>
+            <span className="brand-sub">ton univers d'apprentissage</span>
           </div>
           <button className="nav-collapse" onClick={toggleNav} aria-label={window.ui("navCollapse")} title={window.ui("navCollapse")}>
             <AIcon name="sidebar" size={17} />
@@ -1012,9 +1013,9 @@ function App() {
       {/* ---------- CONTENT ---------- */}
       <div className="content">
         <div className="mobile-top">
-          <div className="brand-mark" style={{ width: 34, height: 34 }}><AIcon name="openbook" size={19} /></div>
+          <div className="brand-mark brand-mark--logo" style={{ width: 34, height: 34 }}><window.BrandMark size={34} /></div>
           <div className="brand-text">
-            <span className="brand-title" style={{ fontSize: 16 }}>Help me Learn</span>
+            <span className="brand-title" style={{ fontSize: 16 }}>Learniverse</span>
           </div>
           {generating && (
             <button className="icon-btn" onClick={stopGeneration} aria-label={window.ui("btnStopGen")} title={window.ui("btnStopGen")} style={{ color: "var(--bad)" }}>
@@ -1060,7 +1061,7 @@ function App() {
         )}
         <main className="content-inner">
           {tab === "learn" && <LearnTab chapters={chapters} current={currentView} generating={generating} home={home} aiReady={aiReady} onOpenSettings={() => setShowSettings(true)} onGenerate={generateChapter} onRetrySection={retrySection} onSelect={(id) => { setCurrentId(id); setHome(false); }} onDownload={downloadChapter} onAddInsertion={addInsertion} onDeleteInsertion={deleteInsertion} onCheckBank={checkAndAddToBank} onAddHiddenBlock={addHiddenBlock} onRestoreHiddenBlock={restoreHiddenBlock} onTranslate={translateChapter} onSetDisplayLang={setChapterLang} />}
-          {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onDownloadPDF={downloadPDF} onNew={newCourse} onRecoverImages={recoverImages} />}
+          {tab === "library" && <LibraryTab chapters={chapters} onOpen={openCourse} onToggleMastered={toggleMastered} onDelete={deleteChapter} onDownload={downloadChapter} onDownloadPDF={downloadPDF} onNew={newCourse} onRecoverImages={recoverImages} onRename={renameChapter} />}
           {tab === "quiz" && <QuizTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryQuiz} generating={generating} onQuizComplete={onQuizDone} />}
           {tab === "cards" && <FlashTab chapters={chapters} current={currentView} onSelect={setCurrentId} onRetry={retryCards} generating={generating} />}
           {tab === "progress" && <window.ProgressDashboard chapters={chapters} progressLog={progressLog} onOpen={openCourse} />}

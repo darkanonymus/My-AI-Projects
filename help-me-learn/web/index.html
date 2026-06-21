@@ -3,16 +3,18 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Help me Learn — IA / KI</title>
+<title>Learniverse — ton univers d'apprentissage</title>
 
 <!-- PWA: installable on iOS + Android, background-audio friendly -->
 <link rel="manifest" href="manifest.webmanifest" />
 <meta name="theme-color" content="#181a20" />
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Help me Learn" />
+<meta name="apple-mobile-web-app-title" content="Learniverse" />
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () {
@@ -187,6 +189,8 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--ochre-soft); color: var(--ochre-deep); border: 1px solid var(--ochre-line);
   display: grid; place-items: center;
 }
+.brand-mark--logo { background: none; border: none; padding: 0; overflow: hidden; }
+.brand-mark--logo svg { width: 100%; height: 100%; display: block; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.12; }
 .brand-title { font-family: var(--font-serif); font-weight: 600; font-size: 18px; letter-spacing: -0.01em; }
 .brand-sub { font-family: var(--font-display); font-style: italic; font-size: 12px; color: var(--ink-faint); letter-spacing: 0; margin-top: 3px; }

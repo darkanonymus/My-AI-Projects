@@ -1,7 +1,7 @@
 {
-  "name": "Help me Learn",
-  "short_name": "Help me Learn",
-  "description": "Apprends à partir de tes propres documents — avec lecture audio en arrière-plan.",
+  "name": "Learniverse",
+  "short_name": "Learniverse",
+  "description": "Ton univers d'apprentissage — transforme tes documents en cours clairs, avec lecture audio en arrière-plan.",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",

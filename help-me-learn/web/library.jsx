@@ -20,10 +20,13 @@ function LibStat({ n, label, color }) {
   );
 }
 
-function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onDownloadPDF, onRecoverImages }) {
+function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onDownloadPDF, onRecoverImages, onRename }) {
   const [confirm, setConfirm] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(ch.titre || "");
   const pct = libPct(ch);
   const done = ch.sections.filter(s => s.status === "done").length;
+  function commitRename() { const t = draft.trim(); if (t && onRename) onRename(ch.id, t); setEditing(false); }
   return (
     <div className="card course-card-lift" style={{
       padding: 0, overflow: "hidden", display: "flex", flexDirection: "column",
@@ -41,7 +44,22 @@ function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onDown
               {ch.mastered && <Tag variant="good"><BIcon name="check" size={12} /> {window.ui("tagMastered")}</Tag>}
               {ch.langueSource && <Tag variant="mono">{ch.langueSource === "de" ? "DE" : ch.langueSource === "fr" ? "FR" : "DE/FR"}</Tag>}
             </div>
-            <h3 style={{ margin: 0, fontSize: "var(--fs-h4)", lineHeight: 1.25 }}>{ch.titre || "Chapitre"}</h3>
+            {editing ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input className="field" value={draft} autoFocus
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") commitRename(); else if (e.key === "Escape") { setDraft(ch.titre || ""); setEditing(false); } }}
+                  onBlur={commitRename}
+                  style={{ flex: 1, minWidth: 0, fontSize: "var(--fs-h4)", padding: "5px 9px" }} />
+                <button className="icon-btn" title="Enregistrer" onMouseDown={e => e.preventDefault()} onClick={commitRename}><BIcon name="check" size={16} /></button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+                <h3 style={{ margin: 0, fontSize: "var(--fs-h4)", lineHeight: 1.25, flex: 1, minWidth: 0 }}>{ch.titre || "Chapitre"}</h3>
+                <button className="icon-btn" title="Renommer le cours" onClick={() => { setDraft(ch.titre || ""); setEditing(true); }}
+                  style={{ flex: "none", opacity: 0.5, width: 28, height: 28 }}><BIcon name="pencil" size={14} /></button>
+              </div>
+            )}
             {ch.theme && <p className="soft" style={{ margin: "var(--space-1) 0 0", fontSize: "var(--fs-small)", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{ch.theme}</p>}
           </div>
         </div>
@@ -82,7 +100,7 @@ function CourseCard({ ch, onOpen, onToggleMastered, onDelete, onDownload, onDown
   );
 }
 
-function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, onDownloadPDF, onNew, onRecoverImages }) {
+function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, onDownloadPDF, onNew, onRecoverImages, onRename }) {
   if (!chapters.length) {
     return (
       <div>
@@ -126,7 +144,7 @@ function LibraryTab({ chapters, onOpen, onToggleMastered, onDelete, onDownload, 
       {/* course grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "var(--space-5)" }}>
         {chapters.slice().reverse().map(ch => (
-          <CourseCard key={ch.id} ch={ch} onOpen={onOpen} onToggleMastered={onToggleMastered} onDelete={onDelete} onDownload={onDownload} onDownloadPDF={onDownloadPDF} onRecoverImages={onRecoverImages} />
+          <CourseCard key={ch.id} ch={ch} onOpen={onOpen} onToggleMastered={onToggleMastered} onDelete={onDelete} onDownload={onDownload} onDownloadPDF={onDownloadPDF} onRecoverImages={onRecoverImages} onRename={onRename} />
         ))}
       </div>
     </div>

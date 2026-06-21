@@ -3,7 +3,7 @@
    stale cache would serve old code (a known gotcha). So when online we always
    take the fresh response and merely keep a copy; the cache is used only as an
    offline fallback. API calls and non-GET requests are never touched. */
-const CACHE = "hml-v1";
+const CACHE = "hml-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 
