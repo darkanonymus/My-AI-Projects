@@ -17,7 +17,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
+# argostranslate -> stanza -> torch. By default torch drags in ~3.4 GB of CUDA
+# packages (nvidia-*, triton) that are useless on this CPU-only box. Pre-install
+# CPU-only torch so the transitive dependency is already satisfied without CUDA.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt
+# Patch stanza CVE-2026-54499 (pip-audit). argostranslate requires stanza with no
+# upper bound, so a targeted upgrade is safe — whereas pinning it in requirements.txt
+# makes pip backtrack and try to build PyAV from source, which fails.
+RUN pip install --no-cache-dir --upgrade "stanza>=1.12.2"
 
 COPY . .
 

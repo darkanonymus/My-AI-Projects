@@ -19,7 +19,8 @@ Tous les findings Critiques/Élevés/Moyens et les Faibles à fort levier ont é
 | M-3 | XSS moteur figures | ✅ Corrigé | `_esc` échappe aussi `"`/`'` ; `_color()` whiteliste les couleurs (hex/rgb/var/nom) avant interpolation en attribut SVG. [figures.jsx](help-me-learn/web/figures.jsx) |
 | M-4 | Fuite d'exceptions | ✅ Corrigé | Messages clients génériques + `_log_err()` côté serveur (translate/tts/stt/extract/llm + stream). |
 | M-5 | CDN sans SRI / pdf.js CVE | ✅ Corrigé | SRI (sha384) ajouté sur pdf.js + tesseract. *(pdf.js 3.x conservé : CVE-2024-4367 non atteignable — aucun `getDocument` côté client, l'extraction est serveur.)* [index.html](help-me-learn/web/index.html) |
-| M-6 | Dépendance vulnérable | ✅ Non applicable | CVE-2026-54499 (stanza) : l'argostranslate actuel (≥1.11) utilise spaCy, **pas stanza** — la CVE ne touche pas le déploiement. (Le pin tenté `stanza>=1.12.2` cassait le build Docker — retiré.) Lockfile complet : reste recommandé. [requirements.txt](help-me-learn/requirements.txt) |
+| M-6 | Dépendance vulnérable | ✅ Corrigé | CVE-2026-54499 (stanza, **bien installé** via argos→stanza→torch) : corrigé dans le [Dockerfile](help-me-learn/deploy/Dockerfile) par `pip install -U "stanza>=1.12.2"` après l'install (un pin dans requirements.txt casse le build → backtracking PyAV). Lockfile complet : reste recommandé. |
+| Bloat | Image Docker 9.6 GB | ✅ Corrigé | torch+CUDA (~3.4 GB, inutile sur CPU) tiré par stanza : torch **CPU-only** pré-installé dans le Dockerfile → image attendue ~6 GB. |
 | L-2 | Mot de passe faible | ✅ Corrigé | Minimum 6 → **10** (back + front). |
 | L-3 | Entrées non bornées | ✅ Corrigé | Plafonds ajoutés (cf. H-1). |
 | Bandit | SHA1 (2× High) | ✅ Corrigé | `usedforsecurity=False` (clés de cache, non sécuritaire) → 0 High. |

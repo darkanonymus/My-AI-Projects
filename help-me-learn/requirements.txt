@@ -28,7 +28,7 @@ num2words>=0.5               # speak numbers as words (read-aloud normalization)
 # API). Language packs download on first use. Falls back to a clear message if
 # absent. After install: python -c "import argostranslate.package as p; p.update_package_index()"
 argostranslate>=1.9          # offline neural MT (https://github.com/argosopentech/argos-translate)
-# Note: current argostranslate (>=1.11) uses spaCy, NOT stanza — so the stanza
-# CVE-2026-54499 flagged by pip-audit (which saw an old local install) does not
-# apply to this deployment. Do NOT re-pin stanza here: it pulls a conflicting
-# dependency set that forces pip to build PyAV from source and breaks the image.
+# NB: argostranslate -> stanza -> torch. The stanza CVE-2026-54499 fix and the
+# CPU-only-torch slimming are handled in deploy/Dockerfile (CPU torch pre-install
+# + post-install `pip install -U stanza>=1.12.2`). Do NOT pin stanza here: it makes
+# pip backtrack into a PyAV source build and breaks the image.
