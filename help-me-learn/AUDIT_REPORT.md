@@ -26,7 +26,11 @@ Tous les findings Critiques/Élevés/Moyens et les Faibles à fort levier ont é
 | Bandit | SHA1 (2× High) | ✅ Corrigé | `usedforsecurity=False` (clés de cache, non sécuritaire) → 0 High. |
 | Dette | `llm_new.py` mort | ✅ Supprimé | + `.gitignore` couvre les sidecars WAL. |
 
-**Volontairement reportés** (hors périmètre sécurité, à traiter séparément car refactors risqués) : découpe des god-files `main.jsx`/`speech.jsx`, suppression de la ré-export des hooks React via `window`, lockfile Python complet, allègement torch/CUDA, build minimal pour permettre une CSP stricte. Détaillés en §8.
+**Fait depuis** : allègement torch/CUDA (image 9.6→3.06 GB, §6) ; découpe de `main.jsx` → `auth.jsx` (1116→945 lignes).
+
+**Volontairement reportés** (refactors/risques à traiter séparément, avec test dédié) :
+- **Conteneur en root** (semgrep `dockerfile.missing-user`) : le conteneur tourne en root. Fix correct = garder l'entrypoint en root pour `chown` le volume `/data` + télécharger les voix, puis **abandonner les privilèges** via `gosu app uvicorn …`. Risque de casser les écritures `/data` (SQLite/caches) si mal fait → à faire+tester hors-rush, conteneur non exposé donc sévérité faible.
+- Découpe de `speech.jsx` (contrôleur audio dense, à coupler avec un build step), suppression de la ré-export des hooks React via `window`, lockfile Python complet, build minimal pour une CSP stricte. Détaillés en §8.
 
 ---
 
@@ -193,7 +197,7 @@ Propre et acyclique : `server.py` importe `llm, tts, stt, translate, extract` ; 
 | **vulture** 2.16 (conf. ≥80 %) | **0 code mort** dans le backend. ✔ |
 | **bandit** 1.9.4 | Avant : 2 High / 1 Med / 15 Low. **Après correctifs : 0 High**, 1 Med (B310 — `urllib` dans `scripts/download_voices.py`, URL de voix connue, légitime), 15 Low (`try/except/pass` défensifs, acceptables). |
 | **pip-audit** 2.10.1 | A signalé `stanza 1.10.1` → **CVE-2026-54499**. **Faux positif pour la prod** : c'était une vieille install locale ; l'argostranslate déployé (≥1.11) est passé à spaCy et ne tire plus stanza, donc le paquet n'est pas présent en prod. (Pin retiré car il cassait le build Docker.) Rejouer `pip-audit` sur le VPS pour confirmer l'arbre réel. |
-| **semgrep** 1.167.0 | Installé mais **ne s'exécute pas nativement sous Windows** (sortie vide, exit 2 — limitation connue, le core OCaml requiert WSL/Docker). À rejouer sur le VPS : `semgrep scan --config=auto --config p/owasp-top-ten --config p/python .` |
+| **semgrep** 1.167.0 | Inexécutable nativement sous Windows → **lancé sur le VPS via Docker** (`returntocorp/semgrep`, p/python + p/owasp-top-ten, 249 règles / 154 fichiers). **18 findings, tous attendus ou hors-app** : 13× `wildcard-postmessage` dans `.claude/skills/impeccable/scripts/` (**outillage agent, PAS le code de l'app** — à exclure du scan) ; 2× SHA1 dans `tts.py` (FP documenté, clés de cache) ; 2× `dangerouslySetInnerHTML` (figures/render, déjà durcis) ; **1× nouveau : `deploy/Dockerfile` sans `USER` non-root** (conteneur tourne en root — voir Bloat/Root ci-dessous). Aucune nouvelle vuln applicative élevée. |
 
 Commandes pour rejouer (VPS Linux, où le code est aussi cloné) :
 ```bash
