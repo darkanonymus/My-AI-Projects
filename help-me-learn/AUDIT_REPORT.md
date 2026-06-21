@@ -26,11 +26,11 @@ Tous les findings Critiques/Élevés/Moyens et les Faibles à fort levier ont é
 | Bandit | SHA1 (2× High) | ✅ Corrigé | `usedforsecurity=False` (clés de cache, non sécuritaire) → 0 High. |
 | Dette | `llm_new.py` mort | ✅ Supprimé | + `.gitignore` couvre les sidecars WAL. |
 
-**Fait depuis** : allègement torch/CUDA (image 9.6→3.06 GB, §6) ; découpe de `main.jsx` → `auth.jsx` (1116→945 lignes).
+**Fait depuis** : allègement torch/CUDA (image 9.6→3.06 GB, §6) ; découpe de `main.jsx` → `auth.jsx` (1116→945 lignes) ; **conteneur en non-root** (semgrep `dockerfile.missing-user`) — `gosu` + user `app` (uid 10001), entrypoint reste root juste pour préparer `/data` puis abandonne les privilèges ; **vérifié en prod** : PID 1 (uvicorn) tourne en uid 10001, DB + caches inscriptibles, TTS/STT/translate OK ; **durcissement serveur** (fail2ban, SSH clé-only — §7).
 
 **Volontairement reportés** (refactors/risques à traiter séparément, avec test dédié) :
-- **Conteneur en root** (semgrep `dockerfile.missing-user`) : le conteneur tourne en root. Fix correct = garder l'entrypoint en root pour `chown` le volume `/data` + télécharger les voix, puis **abandonner les privilèges** via `gosu app uvicorn …`. Risque de casser les écritures `/data` (SQLite/caches) si mal fait → à faire+tester hors-rush, conteneur non exposé donc sévérité faible.
 - Découpe de `speech.jsx` (contrôleur audio dense, à coupler avec un build step), suppression de la ré-export des hooks React via `window`, lockfile Python complet, build minimal pour une CSP stricte. Détaillés en §8.
+- **Firewall** : recommandé en **Hetzner Cloud Firewall** (console, autoriser TCP 22/80/443) plutôt qu'UFW (footgun sur hôte Docker) — action console côté utilisateur.
 
 ---
 
