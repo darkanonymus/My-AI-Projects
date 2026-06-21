@@ -396,6 +396,7 @@ function App() {
   }
 
   uE(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
+  uE(() => { try { document.title = "Learniverse — " + window.ui("brandSub"); } catch (_) {} }, []);
 
   /* persist (with graceful fallback if image blobs blow the quota) */
   uE(() => {
@@ -939,7 +940,7 @@ function App() {
           <div className="brand-mark brand-mark--logo"><window.BrandMark size={42} /></div>
           <div className="brand-text">
             <span className="brand-title">Learniverse</span>
-            <span className="brand-sub">ton univers d'apprentissage</span>
+            <span className="brand-sub">{window.ui("brandSub")}</span>
           </div>
           <button className="nav-collapse" onClick={toggleNav} aria-label={window.ui("navCollapse")} title={window.ui("navCollapse")}>
             <AIcon name="sidebar" size={17} />
