@@ -58,31 +58,32 @@ function Spinner({ size = 18 }) {
   return <span className="spinner" style={{ width: size, height: size }} aria-hidden="true" />;
 }
 
-/* Learniverse logo — an open book under an orbit with a star: a "learning
-   universe". Self-contained gradient tile, crisp at any size. */
+/* Learniverse logo — a ringed planet (Saturn-style orbit) carrying an open book,
+   with a star on the orbit: a "learning universe". Crisp at any size. */
 function BrandMark({ size = 42 }) {
-  const gid = "lv-grad";
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+        <linearGradient id="lv-grad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
           <stop stopColor="#3a2c8c" />
           <stop offset="1" stopColor="#6d4be0" />
         </linearGradient>
+        <clipPath id="lv-front"><rect x="0" y="53" width="100" height="47" /></clipPath>
       </defs>
-      <rect width="48" height="48" rx="13" fill={`url(#${gid})`} />
-      {/* orbit */}
-      <ellipse cx="24" cy="18.5" rx="14" ry="5.4" transform="rotate(-20 24 18.5)"
-        stroke="#ffffff" strokeOpacity="0.38" strokeWidth="1.3" />
-      {/* star / spark on the orbit */}
-      <path d="M35 8.4c.55 2.2 1.0 2.65 3.2 3.2-2.2.55-2.65 1.0-3.2 3.2-.55-2.2-1.0-2.65-3.2-3.2 2.2-.55 2.65-1.0 3.2-3.2z"
-        fill="#f6b84e" />
-      {/* open book */}
-      <g stroke="#ffffff" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" fill="none">
-        <path d="M24 28C20.4 25.9 14.6 25.4 10 26.9V37.6C14.6 36.1 20.4 36.6 24 38.7" />
-        <path d="M24 28C27.6 25.9 33.4 25.4 38 26.9V37.6C33.4 36.1 27.6 36.6 24 38.7" />
-        <path d="M24 28V38.7" />
-      </g>
+      <rect width="100" height="100" rx="27" fill="url(#lv-grad)" />
+      {/* orbit — back half (behind the planet) */}
+      <ellipse cx="50" cy="53" rx="37" ry="12" transform="rotate(-18 50 53)" fill="none" stroke="#cec4ff" strokeOpacity="0.5" strokeWidth="2" />
+      {/* planet with a soft crescent shade */}
+      <circle cx="50" cy="53" r="19.5" fill="#ffffff" />
+      <circle cx="44" cy="47" r="19.5" fill="#efeaff" />
+      {/* orbit — front half (in front of the planet bottom) */}
+      <ellipse cx="50" cy="53" rx="37" ry="12" transform="rotate(-18 50 53)" fill="none" stroke="#cec4ff" strokeOpacity="0.5" strokeWidth="2" clipPath="url(#lv-front)" />
+      {/* open book carved into the planet */}
+      <path d="M50 56.5 L45.9 53.6 L39.4 53.3 L35.9 54.8 L35.9 63.6 L39.4 62.1 L45.9 62.4 L50 64.8 Z" fill="#6d4be0" />
+      <path d="M50 56.5 L54.1 53.6 L60.6 53.3 L64.1 54.8 L64.1 63.6 L60.6 62.1 L54.1 62.4 L50 64.8 Z" fill="#6d4be0" />
+      <line x1="50" y1="56.5" x2="50" y2="64.8" stroke="#9488c8" strokeWidth="0.8" />
+      {/* star on the orbit */}
+      <path d="M79 29 L81.4 33.6 L86 36 L81.4 38.4 L79 43 L76.6 38.4 L72 36 L76.6 33.6 Z" fill="#f6b84e" />
     </svg>
   );
 }
