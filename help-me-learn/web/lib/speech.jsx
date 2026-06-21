@@ -1041,7 +1041,13 @@ function ReadAloudBar({ chapter, lang, onClose }) {
                   if (forLang.length < 2) {
                     return <span className="read-more-label" style={{ color: "var(--ink)", textAlign: "right" }} title={T("raVoiceServer", "Voix de fond (Piper)")}><SpIcon name="speaker" size={13} /> {T("raVoiceBg", "Arrière-plan")}</span>;
                   }
-                  const pretty = n => { const s = n.replace(/^[a-z]{2}_[A-Z]{2}-/, "").replace(/-(medium|low|high|x_low)$/, ""); return s.charAt(0).toUpperCase() + s.slice(1); };
+                  const pretty = n => {
+                    let s = n.replace(/^[a-z]{2}[_-][A-Z]{2}-/, "")        // strip "fr_FR-" (Piper) or "fr-FR-" (edge)
+                             .replace(/-(medium|low|high|x_low)$/, "")      // Piper quality suffix
+                             .replace(/Multilingual/g, " (multi)")          // edge multilingual marker
+                             .replace(/Neural$/, "").trim();                // edge suffix
+                    return s.charAt(0).toUpperCase() + s.slice(1);
+                  };
                   return (
                     <select className="read-voice" value={voiceMap[lang] || ""} aria-label={T("raVoice", "Voix")}
                       onChange={e => {
