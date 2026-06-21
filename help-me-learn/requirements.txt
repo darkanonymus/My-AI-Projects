@@ -16,7 +16,11 @@ Pillow>=10.0                 # crop + JPEG encode
 # Background audio (server-side TTS) — optional but enables YouTube-style
 # background listening. Without it the app falls back to browser Web Speech.
 # After install, fetch a voice: python scripts/download_voices.py
-piper-tts>=1.2               # offline neural TTS (https://github.com/rhasspy/piper)
+# Primary TTS: edge-tts = Microsoft Edge neural voices (Azure quality), free, no
+# key, no GPU. Online (the server is always online). MP3 output is decoded to WAV
+# via ffmpeg (already in the image). Piper below stays as the offline fallback.
+edge-tts>=6.1                 # neural TTS via Edge's free endpoint (unofficial)
+piper-tts>=1.2               # offline neural TTS fallback (https://github.com/rhasspy/piper)
 # Speech-to-text for hands-free voice Q&A (incl. iOS, where browser STT is
 # unavailable). Model downloads on first use. Falls back to Web Speech if absent.
 faster-whisper>=1.0          # offline STT (CTranslate2 Whisper)
