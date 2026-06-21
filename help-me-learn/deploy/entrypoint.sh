@@ -24,7 +24,10 @@ chown -R app:app /data /app/.tts_cache 2>/dev/null || true
 # BACKGROUND, as the app user, so the first user translation never triggers a
 # slow lazy download. Non-blocking: the server starts immediately; the lazy
 # fallback in translate.py covers anything not yet ready.
-gosu app python deploy/predownload_translate.py >> /data/predownload.log 2>&1 &
+gosu app env HOME=/data python deploy/predownload_translate.py >> /data/predownload.log 2>&1 &
 
-# Drop root -> run the server as the non-root `app` user.
-exec gosu app uvicorn server:app --host 0.0.0.0 --port 8000
+# Drop root -> run the server as the non-root `app` user. Force HOME=/data so the
+# app's caches (Argos packs ~/.local, stanza models ~/stanza_resources, prewarm
+# marker) land on the PERSISTENT /data volume — gosu otherwise resets HOME to
+# /home/app (container layer), which is wiped on every redeploy.
+exec gosu app env HOME=/data uvicorn server:app --host 0.0.0.0 --port 8000
