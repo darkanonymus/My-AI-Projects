@@ -170,6 +170,8 @@ async def _call_claude(system: str, prompt: str, model: str | None, images: list
             r = await c.post(ANTHROPIC_URL, headers=headers, json=payload)
     except httpx.ConnectError:
         raise LLMError("Connexion à Claude impossible. Vérifie ta connexion internet.")
+    except httpx.ReadTimeout:
+        raise LLMError("Claude met trop de temps à répondre. Réessaie dans quelques secondes.")
     if r.status_code == 401:
         raise LLMError("Clé API Claude invalide. Vérifie ANTHROPIC_API_KEY dans .env.")
     if r.status_code == 429:

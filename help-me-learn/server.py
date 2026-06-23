@@ -310,6 +310,28 @@ def _rate_limit(request: Request, bucket: str, limit: int, window: int) -> None:
 def _state_key(uid) -> str:
     return f"app:{uid}" if uid else "app"
 
+
+async def _read_capped(upload: UploadFile, limit: int, request: Request) -> bytes:
+    """Read an uploaded file into memory WITHOUT ever buffering more than `limit`.
+    Rejects early on an oversized Content-Length, then reads in 1 MB chunks and
+    aborts the moment the cap is exceeded — so a multi-GB POST can't OOM the box
+    (the previous `await file.read()` buffered the whole upload before any check)."""
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > limit + (1 << 20):
+        raise HTTPException(status_code=413, detail=f"Fichier trop volumineux. Maximum : {limit // 1024 // 1024} Mo.")
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(1 << 20)   # 1 MB
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(status_code=413, detail=f"Fichier trop volumineux. Maximum : {limit // 1024 // 1024} Mo.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 app = FastAPI(title="Help me Learn — local")
 
 
@@ -406,11 +428,9 @@ async def api_stt(request: Request, audio: UploadFile = File(...), lang: str = "
     _rate_limit(request, "stt", 20, 60)
     if not stt.available():
         raise HTTPException(status_code=503, detail="Transcription indisponible : lance « pip install faster-whisper ».")
-    data = await audio.read()
+    data = await _read_capped(audio, 25 * 1024 * 1024, request)
     if not data:
         raise HTTPException(status_code=400, detail="Audio vide.")
-    if len(data) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Enregistrement trop long.")
     suffix = "." + ((audio.filename or "q.webm").rsplit(".", 1)[-1] or "webm")[:8]
     try:
         text = await run_in_threadpool(stt.transcribe, data, lang, suffix)
@@ -616,13 +636,13 @@ _VALID_PROVIDERS = {"gemini", "claude", "ollama"}
 @app.post("/api/extract")
 async def api_extract(request: Request, file: UploadFile = File(...)):
     _rate_limit(request, "extract", 10, 60)
-    data = await file.read()
+    data = await _read_capped(file, _MAX_UPLOAD, request)
     if not data:
         raise HTTPException(status_code=400, detail="Fichier vide.")
-    if len(data) > _MAX_UPLOAD:
-        raise HTTPException(status_code=413, detail=f"Fichier trop volumineux ({len(data)//1024//1024} Mo). Maximum : 50 Mo.")
     if not (file.filename or "").lower().endswith(".pdf") and "pdf" not in (file.content_type or ""):
         raise HTTPException(status_code=400, detail="Seuls les fichiers PDF sont acceptés par cet extracteur.")
+    if not data[:5].startswith(b"%PDF-"):   # magic bytes — don't trust the filename/type alone
+        raise HTTPException(status_code=400, detail="Ce fichier n'est pas un PDF valide.")
     try:
         result = await run_in_threadpool(extract_pdf, data)
     except Exception as e:  # noqa: BLE001
